@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JBHM Capture</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Job Bid Capture</h1>
+      <p class="subtitle">Visible text only · no HTML</p>
+    </header>
+
+    <label>
+      <span>Captured by</span>
+      <input id="capturedBy" type="text" placeholder="Your name" autocomplete="name" />
+    </label>
+
+    <label>
+      <span>API base URL</span>
+      <input id="apiBaseUrl" type="url" placeholder="http://127.0.0.1:5123" />
+    </label>
+
+    <button id="saveSettings" type="button" class="secondary">Save settings</button>
+    <button id="captureBtn" type="button" class="primary">Capture this page</button>
+
+    <p id="status" class="status" role="status"></p>
+
+    <footer>
+      <small>Right-click any page → “Capture job to Bid History”</small>
+    </footer>
+    <script src="popup.js"></script>
+  </body>
+</html>

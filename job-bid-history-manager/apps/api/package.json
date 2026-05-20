@@ -1,0 +1,11 @@
+{
+  "name": "@jbhm/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 5123",
+    "start": "python -m uvicorn app.main:app --host 127.0.0.1 --port 5123",
+    "seed": "python -m scripts.seed_sample",
+    "seed:reset": "python -m scripts.seed_sample --reset"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "job-bid-history-manager",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @jbhm/api",
+    "seed": "npm run seed -w @jbhm/api",
+    "seed:reset": "npm run seed:reset -w @jbhm/api",
+    "dev:desktop": "npm run dev -w @jbhm/desktop",
+    "build:desktop": "npm run build -w @jbhm/desktop",
+    "build:shared": "npm run build -w @jbhm/shared"
+  }
+}
