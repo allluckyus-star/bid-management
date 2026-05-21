@@ -40,4 +40,5 @@ def health():
         "ollama_url": settings.ollama_base_url,
         "ollama_model": settings.ollama_model,
         "port": settings.port,
+        "lan_hint": "For teammates: npm run dev:api:lan then open http://<this-pc-lan-ip>:5123/health — see docs/LAN.md",
     }

@@ -74,6 +74,14 @@ Open http://127.0.0.1:1420
 2. Set **Captured by** and API URL `http://127.0.0.1:5123`
 3. Capture job pages via popup or right-click menu
 
+### Team access on local network (LAN)
+
+See **[docs/LAN.md](docs/LAN.md)** for full steps. Short version:
+
+1. On the host PC: set `apps/desktop/.env` → `VITE_API_BASE_URL=http://YOUR_LAN_IP:5123`
+2. Run `npm run dev:api:lan` and `npm run dev:web:lan`
+3. Teammates open `http://YOUR_LAN_IP:1420` in a browser (allow firewall ports 5123 + 1420)
+
 ## API endpoints
 
 | Method | Path | Description |
@@ -101,6 +109,7 @@ Open http://127.0.0.1:1420
 | `JBHM_OLLAMA_MODEL` | `llama3.2` | Model name |
 | `JBHM_PORT` | `5123` | API port (via uvicorn script) |
 | `VITE_API_BASE_URL` | `http://127.0.0.1:5123` | Desktop API URL |
+| (scripts) | | `dev:api:lan` / `dev:web:lan` — bind API and UI to LAN; see `docs/LAN.md` |
 
 ## Screenshots
 

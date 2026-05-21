@@ -1,20 +1,17 @@
 import type { TimelineBucketKey } from "@jbhm/shared";
 
-/** Matches API MAX_TIMELINE_BUCKETS spans */
-export const TIMELINE_WINDOW_MONTHS = 120;
+const DAY_MS = 86400000;
 
-const WINDOW_MS: Record<Exclude<TimelineBucketKey, "1month">, number> = {
-  "1h": 336 * 3600 * 1000,
-  "1d": 366 * 86400 * 1000,
-};
-
-export type WindowSplit = { before: number; after: number };
-
-export const WINDOW_SPLIT_OLDER: WindowSplit = { before: 0.25, after: 0.75 };
-export const WINDOW_SPLIT_NEWER: WindowSplit = { before: 0.75, after: 0.25 };
-export const WINDOW_SPLIT_INITIAL: WindowSplit = { before: 0.5, after: 0.5 };
+/** Visible range width + pan step per bucket (client-driven; not the old 14-day-only history cap). */
+export const VIEW_WINDOW = {
+  "1h": { initialHalfDays: 7, panStepDays: 3 },
+  "1d": { initialHalfDays: 30, panStepDays: 10 },
+  "1month": { initialHalfMonths: 6, panStepMonths: 3 },
+} as const;
 
 export type HistoryBounds = { minMs: number | null; maxMs: number | null };
+
+export type TimeRange = { start: string; end: string };
 
 export function floorBucketMs(ms: number, bucket: TimelineBucketKey): number {
   const d = new Date(ms);
@@ -22,80 +19,114 @@ export function floorBucketMs(ms: number, bucket: TimelineBucketKey): number {
     return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
   }
   if (bucket === "1d") {
-    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
   }
   return Math.floor(ms / 3600000) * 3600000;
 }
 
 export function addUtcMonths(ms: number, months: number): number {
   const d = new Date(ms);
-  const y = d.getUTCFullYear();
   const m = d.getUTCMonth() + months;
-  return Date.UTC(y + Math.floor(m / 12), ((m % 12) + 12) % 12, 1);
+  const y = d.getUTCFullYear() + Math.floor(m / 12);
+  return Date.UTC(y, ((m % 12) + 12) % 12, 1);
 }
 
 function endOfUtcMonth(monthStartMs: number): number {
   const d = new Date(monthStartMs);
-  const y = d.getUTCFullYear();
-  const m = d.getUTCMonth();
-  return Date.UTC(y, m + 1, 0, 23, 59, 59, 999);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0, 23, 59, 59, 999);
 }
 
-function bucketDurationMs(bucket: TimelineBucketKey): number {
-  if (bucket === "1month") return 30 * 86400000;
-  if (bucket === "1d") return 86400000;
-  return 3600000;
-}
-
-export function rangeAroundAnchor(
-  anchorMs: number,
+function clampRange(
+  startMs: number,
+  endMs: number,
+  bounds: HistoryBounds,
   bucket: TimelineBucketKey,
-  split: WindowSplit,
-  bounds?: HistoryBounds,
-): { start: string; end: string } {
-  const anchor = floorBucketMs(anchorMs, bucket);
-  let startMs: number;
-  let endMs: number;
+): { startMs: number; endMs: number } {
+  const width = Math.max(endMs - startMs, DAY_MS);
+  let s = startMs;
+  let e = endMs;
 
-  if (bucket === "1month") {
-    const beforeM = Math.max(1, Math.round(TIMELINE_WINDOW_MONTHS * split.before));
-    const afterM = Math.max(1, Math.round(TIMELINE_WINDOW_MONTHS * split.after));
-    startMs = addUtcMonths(anchor, -beforeM);
-    endMs = endOfUtcMonth(addUtcMonths(anchor, afterM - 1));
-  } else {
-    const total = WINDOW_MS[bucket];
-    startMs = anchor - split.before * total;
-    endMs = anchor + split.after * total;
+  if (bounds.minMs != null && s < bounds.minMs) {
+    s = floorBucketMs(bounds.minMs, bucket);
+    e = s + width;
   }
-
-  if (bounds?.minMs != null) startMs = Math.max(bounds.minMs, startMs);
-  if (bounds?.maxMs != null) {
+  if (bounds.maxMs != null) {
     const maxEnd =
       bucket === "1month"
         ? endOfUtcMonth(floorBucketMs(bounds.maxMs, bucket))
-        : bounds.maxMs + bucketDurationMs(bucket);
-    endMs = Math.min(maxEnd, endMs);
-  }
-
-  if (bucket !== "1month") {
-    const total = WINDOW_MS[bucket];
-    if (endMs - startMs < total * 0.85) {
-      if (bounds?.minMs != null && startMs <= bounds.minMs + 1000) {
-        endMs = Math.min(bounds.maxMs != null ? bounds.maxMs + total : endMs, startMs + total);
-      } else if (bounds?.maxMs != null && endMs >= bounds.maxMs) {
-        startMs = Math.max(bounds.minMs ?? startMs, endMs - total);
-      }
+        : bounds.maxMs + (bucket === "1d" ? DAY_MS : 3600000);
+    if (e > maxEnd) {
+      e = maxEnd;
+      s = Math.max(bounds.minMs ?? s, e - width);
     }
   }
+  if (s >= e) e = s + DAY_MS;
+  return { startMs: s, endMs: e };
+}
 
+function toRange(startMs: number, endMs: number): TimeRange {
   return { start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString() };
 }
 
-export function initialRange(
+/** First load: now − half … now + half (e.g. 1h → ±7 days). */
+export function initialRange(bucket: TimelineBucketKey, bounds: HistoryBounds = { minMs: null, maxMs: null }): TimeRange {
+  const now = Date.now();
+  if (bucket === "1month") {
+    const { initialHalfMonths } = VIEW_WINDOW["1month"];
+    const cur = floorBucketMs(now, bucket);
+    const startMs = addUtcMonths(cur, -initialHalfMonths);
+    const endMs = endOfUtcMonth(addUtcMonths(cur, initialHalfMonths));
+    const c = clampRange(startMs, endMs, bounds, bucket);
+    return toRange(c.startMs, c.endMs);
+  }
+  const half = VIEW_WINDOW[bucket].initialHalfDays * DAY_MS;
+  const c = clampRange(now - half, now + half, bounds, bucket);
+  return toRange(c.startMs, c.endMs);
+}
+
+/**
+ * Shift the whole window by one step; width unchanged.
+ * e.g. (x, y) → (x−3d, y−3d) on left edge; slider is moved so the chart view stays the same.
+ */
+export function shiftLoadedRange(
+  current: TimeRange,
+  direction: "older" | "newer",
   bucket: TimelineBucketKey,
-  bounds?: HistoryBounds,
-): { start: string; end: string } {
-  return rangeAroundAnchor(Date.now(), bucket, WINDOW_SPLIT_INITIAL, bounds);
+  bounds: HistoryBounds = { minMs: null, maxMs: null },
+): TimeRange {
+  const startMs = new Date(current.start).getTime();
+  const endMs = new Date(current.end).getTime();
+  const width = endMs - startMs;
+  const sign = direction === "older" ? -1 : 1;
+
+  if (bucket === "1month") {
+    const step = VIEW_WINDOW["1month"].panStepMonths;
+    const newStart = addUtcMonths(floorBucketMs(startMs, bucket), sign * step);
+    const newEnd = endOfUtcMonth(addUtcMonths(floorBucketMs(endMs, bucket), sign * step));
+    const c = clampRange(newStart, newEnd, bounds, bucket);
+    return toRange(c.startMs, c.endMs);
+  }
+
+  const deltaMs = sign * VIEW_WINDOW[bucket].panStepDays * DAY_MS;
+  let newStartMs = startMs + deltaMs;
+  let newEndMs = endMs + deltaMs;
+
+  if (bounds.minMs != null && newStartMs < bounds.minMs) {
+    newStartMs = floorBucketMs(bounds.minMs, bucket);
+    newEndMs = newStartMs + width;
+  }
+  if (bounds.maxMs != null) {
+    const maxEnd =
+      bucket === "1month"
+        ? endOfUtcMonth(floorBucketMs(bounds.maxMs, bucket))
+        : bounds.maxMs + (bucket === "1d" ? DAY_MS : 3600000);
+    if (newEndMs > maxEnd) {
+      newEndMs = maxEnd;
+      newStartMs = newEndMs - width;
+    }
+  }
+
+  return toRange(newStartMs, newEndMs);
 }
 
 export function parseHistoryBounds(
@@ -115,38 +146,68 @@ export function canPanOlder(loadedStartIso: string, bounds: HistoryBounds, bucke
 
 export function canPanNewer(loadedEndIso: string, bounds: HistoryBounds, bucket: TimelineBucketKey): boolean {
   if (bounds.maxMs == null) return false;
-  return new Date(loadedEndIso).getTime() < bounds.maxMs + bucketDurationMs(bucket);
-}
-
-export function findCategoryIndex(categories: string[], anchorIso: string): number {
-  const idx = categories.indexOf(anchorIso);
-  if (idx >= 0) return idx;
-  const target = new Date(anchorIso).getTime();
-  let best = 0;
-  let bestDist = Infinity;
-  for (let i = 0; i < categories.length; i++) {
-    const dist = Math.abs(new Date(categories[i]).getTime() - target);
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = i;
-    }
+  const endMs = new Date(loadedEndIso).getTime();
+  if (bucket === "1month") {
+    return endMs < endOfUtcMonth(floorBucketMs(bounds.maxMs, bucket));
   }
-  return best;
+  return endMs < bounds.maxMs + (bucket === "1d" ? DAY_MS : 3600000);
 }
 
 export type ZoomRange = { start: number; end: number };
 
-export function zoomWithAnchorAt(
-  categoryCount: number,
-  anchorIdx: number,
-  anchorPosition: number,
-  maxVisible: number,
+/** Absolute time span currently shown on the chart (from slider %). */
+export function visibleAbsoluteRange(loaded: TimeRange, zoom: ZoomRange): { startMs: number; endMs: number } {
+  const startMs = new Date(loaded.start).getTime();
+  const endMs = new Date(loaded.end).getTime();
+  const span = Math.max(endMs - startMs, 1);
+  return {
+    startMs: startMs + (zoom.start / 100) * span,
+    endMs: startMs + (zoom.end / 100) * span,
+  };
+}
+
+/**
+ * After (x,y)→(x−3d,y−3d), move the slider so the same bucket columns stay in view.
+ */
+export function zoomPreservingVisibleRange(
+  newLoaded: TimeRange,
+  categories: string[],
+  visible: { startMs: number; endMs: number },
+  maxVisibleBars: number,
 ): ZoomRange {
-  const n = categoryCount;
+  const n = categories.length;
   if (n <= 1) return { start: 0, end: 100 };
-  const span = n <= maxVisible ? 100 : (maxVisible / n) * 100;
-  const anchorPct = n > 1 ? (anchorIdx / (n - 1)) * 100 : 0;
-  let start = anchorPct - anchorPosition * span;
-  start = Math.max(0, Math.min(100 - span, start));
-  return { start, end: start + span };
+
+  let startIdx = 0;
+  let endIdx = n - 1;
+  for (let i = 0; i < n; i++) {
+    if (new Date(categories[i]).getTime() >= visible.startMs) {
+      startIdx = i;
+      break;
+    }
+  }
+  for (let i = n - 1; i >= 0; i--) {
+    if (new Date(categories[i]).getTime() <= visible.endMs) {
+      endIdx = i;
+      break;
+    }
+  }
+  if (endIdx < startIdx) endIdx = startIdx;
+
+  const maxSpan = n <= maxVisibleBars ? 100 : (maxVisibleBars / n) * 100;
+  let startPct = n > 1 ? (startIdx / (n - 1)) * 100 : 0;
+  let endPct = n > 1 ? ((endIdx + 1) / n) * 100 : 100;
+  let width = endPct - startPct;
+
+  if (width > maxSpan) {
+    const mid = (startPct + endPct) / 2;
+    startPct = mid - maxSpan / 2;
+    endPct = mid + maxSpan / 2;
+    width = maxSpan;
+  }
+
+  startPct = Math.max(0, Math.min(100 - maxSpan, startPct));
+  endPct = Math.min(100, Math.max(startPct + width, endPct));
+
+  return { start: startPct, end: endPct };
 }

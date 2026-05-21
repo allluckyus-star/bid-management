@@ -7,13 +7,11 @@ import { fetchTimeline } from "@/lib/api";
 import {
   canPanNewer,
   canPanOlder,
-  findCategoryIndex,
   initialRange,
   parseHistoryBounds,
-  rangeAroundAnchor,
-  WINDOW_SPLIT_NEWER,
-  WINDOW_SPLIT_OLDER,
-  zoomWithAnchorAt,
+  shiftLoadedRange,
+  visibleAbsoluteRange,
+  zoomPreservingVisibleRange,
   type HistoryBounds,
   type ZoomRange,
 } from "@/lib/timeline-window";
@@ -29,12 +27,134 @@ const BUCKETS: { key: TimelineBucketKey; label: string }[] = [
 
 const USER_COLORS = ["#3b82f6", "#22c55e", "#a855f7", "#f59e0b", "#ec4899", "#06b6d4"];
 
+function dataZoomSliderStyle(dark: boolean) {
+  if (dark) {
+    return {
+      backgroundColor: "#1a2030",
+      borderColor: "#334155",
+      fillerColor: "rgba(96, 165, 250, 0.32)",
+      handleStyle: { color: "#252d3d", borderColor: "#64748b", borderWidth: 1 },
+      moveHandleStyle: { color: "#334155", borderColor: "#64748b", borderWidth: 1 },
+      emphasis: {
+        handleStyle: { color: "#334155", borderColor: "#94a3b8" },
+        moveHandleStyle: { color: "#475569", borderColor: "#94a3b8" },
+      },
+      dataBackground: {
+        lineStyle: { color: "#475569", width: 1 },
+        areaStyle: { color: "rgba(71, 85, 105, 0.4)" },
+      },
+      selectedDataBackground: {
+        lineStyle: { color: "#94a3b8", width: 1 },
+        areaStyle: { color: "rgba(148, 163, 184, 0.22)" },
+      },
+      textStyle: { color: "#94a3b8" },
+    };
+  }
+  return {
+    backgroundColor: "#f1f5f9",
+    borderColor: "#cbd5e1",
+    fillerColor: "rgba(59, 130, 246, 0.22)",
+    handleStyle: { color: "#ffffff", borderColor: "#94a3b8", borderWidth: 1 },
+    moveHandleStyle: { color: "#e2e8f0", borderColor: "#94a3b8", borderWidth: 1 },
+    dataBackground: {
+      lineStyle: { color: "#cbd5e1", width: 1 },
+      areaStyle: { color: "rgba(148, 163, 184, 0.25)" },
+    },
+    selectedDataBackground: {
+      lineStyle: { color: "#64748b", width: 1 },
+      areaStyle: { color: "rgba(100, 116, 139, 0.3)" },
+    },
+  };
+}
+
+/** Distinct from USER_COLORS; readable on light and dark chart backgrounds */
+function nowMarkerTheme(dark: boolean) {
+  return dark
+    ? {
+        line: "#fb7185",
+        labelText: "#ffe4e6",
+        labelBg: "rgba(76, 5, 25, 0.94)",
+        labelBorder: "#fb7185",
+      }
+    : {
+        line: "#e11d48",
+        labelText: "#9f1239",
+        labelBg: "rgba(255, 241, 242, 0.96)",
+        labelBorder: "#e11d48",
+      };
+}
+
+/** Extra y-axis space above tallest visible stack so the Now pill clears bars. */
+const NOW_HEADROOM_MIN = 3;
+const NOW_HEADROOM_RATIO = 0.22;
+
+function maxVisibleStackedBids(
+  series: { buckets: { count: number }[] }[],
+  zoom: ZoomRange,
+): number {
+  const n = series[0]?.buckets.length ?? 0;
+  if (!n) return 0;
+  const { startIdx, endIdx } = visibleBucketWindow(n, zoom);
+  let max = 0;
+  for (let i = startIdx; i < endIdx; i++) {
+    let stack = 0;
+    for (const s of series) {
+      stack += s.buckets[i]?.count ?? 0;
+    }
+    max = Math.max(max, stack);
+  }
+  return max;
+}
+
+function yAxisMaxWithNowHeadroom(stackMax: number): number {
+  if (stackMax <= 0) return 5;
+  const headroom = Math.max(
+    NOW_HEADROOM_MIN,
+    Math.ceil(stackMax * NOW_HEADROOM_RATIO),
+  );
+  return stackMax + headroom;
+}
+
+/** Full-height line + label in headroom band; moves with x-axis zoom/pan. */
+function buildNowMarkLine(nowCategory: string, yMax: number, dark: boolean) {
+  const t = nowMarkerTheme(dark);
+  return {
+    silent: true,
+    symbol: ["none", "none"] as const,
+    z: 20,
+    lineStyle: { color: t.line, type: "solid" as const, width: 2, opacity: 0.95 },
+    label: {
+      show: true,
+      formatter: "Now",
+      color: t.labelText,
+      backgroundColor: t.labelBg,
+      borderColor: t.labelBorder,
+      borderWidth: 1,
+      borderRadius: 4,
+      padding: [3, 8] as [number, number],
+      fontSize: 11,
+      fontWeight: 600,
+      position: "end" as const,
+      distance: 2,
+      align: "center" as const,
+      verticalAlign: "bottom" as const,
+    },
+    data: [
+      [
+        { coord: [nowCategory, 0] },
+        { coord: [nowCategory, yMax] },
+      ],
+    ],
+  };
+}
+
 const MIN_LABEL_SPACING_PX = 10;
 const CHART_LABEL_WIDTH_PX = 680;
 const DATA_ZOOM_ANIM_MS = 200;
 const FULL_ZOOM: ZoomRange = { start: 0, end: 100 };
 const EDGE_PAN_THRESHOLD_PCT = 4;
-const RECENTER_DEBOUNCE_MS = 400;
+/** Scroll without modifier pans the visible time window */
+const WHEEL_PAN_STEP_RATIO = 0.1;
 /** Above this many x-axis slots, use lighter rendering (hour view) */
 const HEAVY_CATEGORY_COUNT = 80;
 
@@ -58,28 +178,92 @@ function maxZoomSpanPercent(categoryCount: number, bucketKey: TimelineBucketKey)
   return (cap / categoryCount) * 100;
 }
 
-function parseUtcYmd(iso: string): { year: number; month: number; day: number } | null {
+function clampZoomRange(start: number, end: number, maxSpan: number): ZoomRange {
+  let s = Math.max(0, start);
+  let e = Math.min(100, end);
+  if (e - s > maxSpan) {
+    e = s + maxSpan;
+  }
+  if (e - s < 2) {
+    e = Math.min(100, s + 2);
+  }
+  if (s < 0) {
+    e -= s;
+    s = 0;
+  }
+  if (e > 100) {
+    s -= e - 100;
+    e = 100;
+  }
+  s = Math.max(0, s);
+  return { start: s, end: e };
+}
+
+function applyWheelZoom(zoom: ZoomRange, deltaY: number, maxSpan: number): ZoomRange {
+  const span = zoom.end - zoom.start;
+  const center = (zoom.start + zoom.end) / 2;
+  const abs = Math.abs(deltaY);
+  const factor = abs > 3 ? 1.14 : abs > 1 ? 1.08 : 1.04;
+  const scale = deltaY > 0 ? factor : 1 / factor;
+  const newSpan = Math.min(maxSpan, Math.max(2, span * scale));
+  return clampZoomRange(center - newSpan / 2, center + newSpan / 2, maxSpan);
+}
+
+function zoomRangesEqual(a: ZoomRange, b: ZoomRange): boolean {
+  return Math.abs(a.start - b.start) < 0.01 && Math.abs(a.end - b.end) < 0.01;
+}
+
+/** Pan only — preserves window width; no-op at start/end (never shrinks span like zoom). */
+function applyWheelPan(zoom: ZoomRange, deltaY: number, maxSpan: number): ZoomRange {
+  const span = zoom.end - zoom.start;
+  if (span <= 0) return zoom;
+
+  const step = Math.max(0.5, span * WHEEL_PAN_STEP_RATIO);
+  const shift = deltaY > 0 ? step : -step;
+
+  if (shift > 0 && zoom.end >= 100) return zoom;
+  if (shift < 0 && zoom.start <= 0) return zoom;
+
+  let newStart = zoom.start + shift;
+  let newEnd = zoom.end + shift;
+
+  if (newEnd > 100) {
+    newEnd = 100;
+    newStart = newEnd - span;
+  }
+  if (newStart < 0) {
+    newStart = 0;
+    newEnd = newStart + span;
+  }
+  if (newEnd - newStart > maxSpan) {
+    newEnd = newStart + maxSpan;
+  }
+
+  return { start: newStart, end: newEnd };
+}
+
+function parseLocalYmd(iso: string): { year: number; month: number; day: number } | null {
   const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!m) return null;
   return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
 }
 
-/** One UTC calendar day: 00:00:00.000 – 23:59:59.999 */
-function utcCalendarDayBounds(startIso: string): { startMs: number; endMs: number } {
-  const p = parseUtcYmd(startIso);
-  if (!p) {
-    const anchor = new Date(startIso);
-    const y = anchor.getUTCFullYear();
-    const mo = anchor.getUTCMonth();
-    const d = anchor.getUTCDate();
+/** One local calendar day: 00:00:00.000 – 23:59:59.999 (matches API 1d buckets). */
+function localCalendarDayBounds(startIso: string): { startMs: number; endMs: number } {
+  const p = parseLocalYmd(startIso);
+  if (p) {
     return {
-      startMs: Date.UTC(y, mo, d, 0, 0, 0, 0),
-      endMs: Date.UTC(y, mo, d, 23, 59, 59, 999),
+      startMs: new Date(p.year, p.month - 1, p.day, 0, 0, 0, 0).getTime(),
+      endMs: new Date(p.year, p.month - 1, p.day, 23, 59, 59, 999).getTime(),
     };
   }
+  const anchor = new Date(startIso);
+  const y = anchor.getFullYear();
+  const mo = anchor.getMonth();
+  const d = anchor.getDate();
   return {
-    startMs: Date.UTC(p.year, p.month - 1, p.day, 0, 0, 0, 0),
-    endMs: Date.UTC(p.year, p.month - 1, p.day, 23, 59, 59, 999),
+    startMs: new Date(y, mo, d, 0, 0, 0, 0).getTime(),
+    endMs: new Date(y, mo, d, 23, 59, 59, 999).getTime(),
   };
 }
 
@@ -88,30 +272,62 @@ function bucketEndMs(startIso: string, bucketKey: TimelineBucketKey): number {
   if (bucketKey === "1month" && p) {
     return Date.UTC(p.year, p.month, 0, 23, 59, 59, 999);
   }
-  if (bucketKey === "1d") return utcCalendarDayBounds(startIso).endMs;
+  if (bucketKey === "1d") return localCalendarDayBounds(startIso).endMs;
   const start = new Date(startIso).getTime();
   return start + 3600000 - 1;
 }
 
 function bucketStartMs(startIso: string, bucketKey: TimelineBucketKey): number {
-  if (bucketKey === "1d") return utcCalendarDayBounds(startIso).startMs;
+  if (bucketKey === "1d") return localCalendarDayBounds(startIso).startMs;
   return new Date(startIso).getTime();
 }
 
+/** Local calendar day key — matches day-axis labels (toLocaleDateString). */
+function localDayKey(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+function localMonthKey(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${d.getMonth() + 1}`;
+}
+
+/** Index of the bucket that contains the current time, or -1 if not in loaded range. */
 function findNowBucketIndex(categories: string[], bucketKey: TimelineBucketKey): number {
-  if (!categories.length) return 0;
+  if (!categories.length) return -1;
   const now = Date.now();
+
+  if (bucketKey === "1d") {
+    return categories.findIndex((iso) => {
+      const { startMs, endMs } = localCalendarDayBounds(iso);
+      return now >= startMs && now <= endMs;
+    });
+  }
+
+  if (bucketKey === "1month") {
+    const thisMonth = localMonthKey(now);
+    return categories.findIndex((iso) => localMonthKey(new Date(iso).getTime()) === thisMonth);
+  }
+
   for (let i = 0; i < categories.length; i++) {
     const start = bucketStartMs(categories[i], bucketKey);
     const end = bucketEndMs(categories[i], bucketKey);
     if (now >= start && now <= end) return i;
   }
+  return -1;
+}
+
+/** Closest bucket to now — only for initial zoom when now is outside the first loaded window. */
+function findNearestBucketIndex(categories: string[], bucketKey: TimelineBucketKey): number {
+  if (!categories.length) return 0;
+  const now = Date.now();
   let best = 0;
   let bestDist = Infinity;
   for (let i = 0; i < categories.length; i++) {
     const { startMs, endMs } =
       bucketKey === "1d"
-        ? utcCalendarDayBounds(categories[i])
+        ? localCalendarDayBounds(categories[i])
         : { startMs: new Date(categories[i]).getTime(), endMs: bucketEndMs(categories[i], bucketKey) };
     const dist = Math.min(Math.abs(now - startMs), Math.abs(now - endMs));
     if (dist < bestDist) {
@@ -127,7 +343,8 @@ function initialZoomAroundNow(categories: string[], bucketKey: TimelineBucketKey
   if (n <= 1) return FULL_ZOOM;
 
   const cap = MAX_VISIBLE_IN_VIEW[bucketKey];
-  const nowIdx = findNowBucketIndex(categories, bucketKey);
+  let nowIdx = findNowBucketIndex(categories, bucketKey);
+  if (nowIdx < 0) nowIdx = findNearestBucketIndex(categories, bucketKey);
   const { before, after } = INITIAL_VIEW[bucketKey];
 
   let startIdx = Math.max(0, nowIdx - before);
@@ -176,15 +393,14 @@ function formatMonthAxisLabel(bucketStartIso: string): string {
 }
 
 function formatDayBucketRange(bucketStartIso: string): string {
-  const p = parseUtcYmd(bucketStartIso);
-  if (!p) return bucketStartIso;
-  const datePart = new Date(Date.UTC(p.year, p.month - 1, p.day)).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-  return `${datePart} 00:00 – ${datePart} 23:59 UTC`;
+  const { startMs, endMs } = localCalendarDayBounds(bucketStartIso);
+  const fmt = (ms: number) =>
+    new Date(ms).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  return `${fmt(startMs)} 00:00 – ${fmt(endMs)} 23:59`;
 }
 
 function formatBucketRange(startIso: string, endIso: string, bucket: TimelineBucketKey): string {
@@ -205,12 +421,11 @@ function bucketAxisLabel(iso: string, bucket: TimelineBucketKey): string {
   }
   const d = new Date(iso);
   if (bucket === "1d") {
-    const p = parseUtcYmd(iso);
+    const p = parseLocalYmd(iso);
     if (!p) return iso;
-    return new Date(Date.UTC(p.year, p.month - 1, p.day)).toLocaleDateString("en-US", {
+    return new Date(p.year, p.month - 1, p.day).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
-      timeZone: "UTC",
     });
   }
   const datePart = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -470,16 +685,19 @@ function outlineBarStyle(color: string): BarItemStyle {
 
 type Props = {
   tableHighlightContext: JobFilters;
+  dark?: boolean;
 };
 
-export function TimelineChart({ tableHighlightContext }: Props) {
+export function TimelineChart({ tableHighlightContext, dark = false }: Props) {
   const [bucket, setBucket] = useState<TimelineBucketKey>("1d");
   const [data, setData] = useState<Awaited<ReturnType<typeof fetchTimeline>> | null>(null);
   const [pinnedZoom, setPinnedZoom] = useState<ZoomRange | null>(null);
   const [labelRefresh, setLabelRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
   const [panLoading, setPanLoading] = useState(false);
-
+  const chartRef = useRef<InstanceType<typeof ReactECharts> | null>(null);
+  const wheelCleanupRef = useRef<(() => void) | null>(null);
+  const wheelDispatchRef = useRef(false);
   const debouncedHighlight = useDebouncedValue(tableHighlightContext, 300);
   const highlightActive = hasTableHighlight(debouncedHighlight);
 
@@ -487,9 +705,8 @@ export function TimelineChart({ tableHighlightContext }: Props) {
   const bucketLoadRef = useRef(0);
   const highlightKeyRef = useRef<string | null>(null);
   const historyBoundsRef = useRef<HistoryBounds>({ minMs: null, maxMs: null });
-  const lastRecenterKeyRef = useRef("");
-  const recenterTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const isRecenteringRef = useRef(false);
+  const pendingEdgeRef = useRef<"older" | "newer" | null>(null);
+  const isPanShiftRef = useRef(false);
   const dataRef = useRef(data);
   const bucketRef = useRef(bucket);
   const highlightRef = useRef(debouncedHighlight);
@@ -497,17 +714,61 @@ export function TimelineChart({ tableHighlightContext }: Props) {
   bucketRef.current = bucket;
   highlightRef.current = debouncedHighlight;
 
+  const bindChartWheel = useCallback((chart: ReturnType<InstanceType<typeof ReactECharts>["getEchartsInstance"]>) => {
+    const zr = chart.getZr();
+    const handler = (ev: { event?: WheelEvent; stop?: () => void }) => {
+      const e = ev.event;
+      if (!e) return;
+      const cats = dataRef.current?.series[0]?.buckets.length ?? 0;
+      if (cats <= 1) return;
+
+      e.preventDefault();
+      ev.stop?.();
+
+      const maxSpan = maxZoomSpanPercent(cats, bucketRef.current);
+      const prev = labelState.zoom;
+      const next =
+        e.ctrlKey || e.metaKey
+          ? applyWheelZoom(prev, e.deltaY, maxSpan)
+          : applyWheelPan(prev, e.deltaY, maxSpan);
+
+      if (zoomRangesEqual(prev, next)) return;
+
+      labelState.zoom = next;
+      setPinnedZoom(null);
+      setLabelRefresh((n) => n + 1);
+
+      wheelDispatchRef.current = true;
+      chart.dispatchAction({
+        type: "dataZoom",
+        start: next.start,
+        end: next.end,
+      });
+    };
+    zr.on("mousewheel", handler);
+    return () => zr.off("mousewheel", handler);
+  }, []);
+
+  const setupChartWheel = useCallback(
+    (chart: ReturnType<InstanceType<typeof ReactECharts>["getEchartsInstance"]>) => {
+      wheelCleanupRef.current?.();
+      wheelCleanupRef.current = bindChartWheel(chart);
+    },
+    [bindChartWheel],
+  );
+
+  useEffect(() => () => wheelCleanupRef.current?.(), []);
+
   type LoadOpts = {
     resetView?: boolean;
     range?: { start: string; end: string };
     zoomAfter?: ZoomRange;
     panShift?: boolean;
-    anchorIso?: string;
-    anchorPosition?: number;
+    preserveVisible?: { startMs: number; endMs: number };
   };
 
   const load = useCallback(async (bucketKey: TimelineBucketKey, highlight: JobFilters, opts: LoadOpts = {}) => {
-    const { resetView = false, range, zoomAfter, panShift = false, anchorIso, anchorPosition } = opts;
+    const { resetView = false, range, zoomAfter, panShift = false, preserveVisible } = opts;
     const gen = ++loadGenRef.current;
     if (resetView) setLoading(true);
     else if (panShift) setPanLoading(true);
@@ -523,12 +784,11 @@ export function TimelineChart({ tableHighlightContext }: Props) {
       let zoom: ZoomRange;
       if (zoomAfter) {
         zoom = zoomAfter;
-      } else if (anchorIso != null && anchorPosition != null && categories.length) {
-        const anchorIdx = findCategoryIndex(categories, anchorIso);
-        zoom = zoomWithAnchorAt(
-          categories.length,
-          anchorIdx,
-          anchorPosition,
+      } else if (preserveVisible && categories.length) {
+        zoom = zoomPreservingVisibleRange(
+          { start: res.start, end: res.end },
+          categories,
+          preserveVisible,
           MAX_VISIBLE_IN_VIEW[bucketKey],
         );
       } else if (resetView) {
@@ -545,14 +805,14 @@ export function TimelineChart({ tableHighlightContext }: Props) {
       if (gen === loadGenRef.current) {
         if (resetView) setLoading(false);
         if (panShift) setPanLoading(false);
-        isRecenteringRef.current = false;
+        isPanShiftRef.current = false;
       }
     }
   }, []);
 
   useEffect(() => {
     highlightKeyRef.current = null;
-    lastRecenterKeyRef.current = "";
+    pendingEdgeRef.current = null;
     const token = ++bucketLoadRef.current;
     void load(bucket, debouncedHighlight, {
       resetView: true,
@@ -584,6 +844,12 @@ export function TimelineChart({ tableHighlightContext }: Props) {
     [bucket, data?.start, data?.end, data?.series],
   );
 
+  useEffect(() => {
+    if (loading) return;
+    const chart = chartRef.current?.getEchartsInstance();
+    if (chart) setupChartWheel(chart);
+  }, [chartKey, loading, setupChartWheel]);
+
   const option = useMemo(() => {
     if (!data?.series.length) {
       return {
@@ -606,7 +872,12 @@ export function TimelineChart({ tableHighlightContext }: Props) {
     const barMaxWidth = visibleCount > 72 ? 10 : visibleCount > 40 ? 16 : 28;
 
     const nowIdx = findNowBucketIndex(categories, bucket);
-    const nowCategory = categories[nowIdx];
+    const { startIdx, endIdx } = visibleBucketWindow(categories.length, labelState.zoom);
+    const nowInLoadedRange = nowIdx >= 0;
+    const nowCategory = nowInLoadedRange ? categories[nowIdx] : undefined;
+    const nowVisible = nowInLoadedRange && nowIdx >= startIdx && nowIdx < endIdx;
+    const stackMax = maxVisibleStackedBids(data.series, labelState.zoom);
+    const yMax = yAxisMaxWithNowHeadroom(stackMax);
 
     const barSeriesBase = {
       type: "bar" as const,
@@ -684,22 +955,8 @@ export function TimelineChart({ tableHighlightContext }: Props) {
               segment: "in_table",
               itemStyle: filledBarStyle(color),
             })),
-            idx === 0 && nowCategory
-              ? {
-                  markLine: {
-                    silent: true,
-                    symbol: ["none", "none"],
-                    lineStyle: { color: "#f59e0b", type: "dashed", width: 1.5 },
-                    label: {
-                      show: true,
-                      formatter: "Now",
-                      color: "#f59e0b",
-                      fontSize: 10,
-                      position: "insideEndTop",
-                    },
-                    data: [{ xAxis: nowCategory }],
-                  },
-                }
+            idx === 0 && nowCategory && nowVisible
+              ? { markLine: buildNowMarkLine(nowCategory, yMax, dark) }
               : undefined,
           );
           return;
@@ -716,22 +973,8 @@ export function TimelineChart({ tableHighlightContext }: Props) {
             })),
             {
               large: isHeavy && !userHidden,
-              ...(idx === 0 && nowCategory
-                ? {
-                    markLine: {
-                      silent: true,
-                      symbol: ["none", "none"],
-                      lineStyle: { color: "#f59e0b", type: "dashed", width: 1.5 },
-                      label: {
-                        show: true,
-                        formatter: "Now",
-                        color: "#f59e0b",
-                        fontSize: 10,
-                        position: "insideEndTop",
-                      },
-                      data: [{ xAxis: nowCategory }],
-                    },
-                  }
+              ...(idx === 0 && nowCategory && nowVisible
+                ? { markLine: buildNowMarkLine(nowCategory, yMax, dark) }
                 : {}),
             },
           );
@@ -748,22 +991,8 @@ export function TimelineChart({ tableHighlightContext }: Props) {
           };
         });
         pushSeries(s.captured_by, inTablePoints, {
-          ...(idx === 0 && nowCategory
-            ? {
-                markLine: {
-                  silent: true,
-                  symbol: ["none", "none"],
-                  lineStyle: { color: "#f59e0b", type: "dashed", width: 1.5 },
-                  label: {
-                    show: true,
-                    formatter: "Now",
-                    color: "#f59e0b",
-                    fontSize: 10,
-                    position: "insideEndTop",
-                  },
-                  data: [{ xAxis: nowCategory }],
-                },
-              }
+          ...(idx === 0 && nowCategory && nowVisible
+            ? { markLine: buildNowMarkLine(nowCategory, yMax, dark) }
             : {}),
         });
         pushSeries(
@@ -839,6 +1068,8 @@ export function TimelineChart({ tableHighlightContext }: Props) {
       },
       yAxis: {
         type: "value" as const,
+        min: 0,
+        max: yMax,
         minInterval: 1,
         axisLabel: { color: "#94a3b8" },
         name: "Bids",
@@ -849,54 +1080,74 @@ export function TimelineChart({ tableHighlightContext }: Props) {
             {
               ...dataZoomCommon,
               type: "inside" as const,
-              zoomOnMouseWheel: true,
+              zoomOnMouseWheel: false,
+              moveOnMouseWheel: false,
+              moveOnMouseMove: false,
             },
             {
               ...dataZoomCommon,
+              ...dataZoomSliderStyle(dark),
               type: "slider" as const,
               height: 18,
               bottom: 28,
               brushSelect: false,
             },
           ]
-        : [{ ...dataZoomCommon, type: "inside" as const }],
+        : [
+            {
+              ...dataZoomCommon,
+              type: "inside" as const,
+              zoomOnMouseWheel: false,
+              moveOnMouseWheel: false,
+              moveOnMouseMove: false,
+            },
+          ],
       series,
     };
-  }, [data, bucket, pinnedZoom, labelRefresh, highlightActive]);
+  }, [data, bucket, pinnedZoom, labelRefresh, highlightActive, dark]);
 
-  const scheduleEdgeRecenter = useCallback(
-    (direction: "older" | "newer", anchorIso: string) => {
-      const recenterKey = `${direction}:${anchorIso}`;
-      if (recenterKey === lastRecenterKeyRef.current) return;
+  const runEdgePanShift = useCallback(
+    (direction: "older" | "newer") => {
+      const d = dataRef.current;
+      const b = bucketRef.current;
+      if (!d?.series.length || isPanShiftRef.current) return;
 
-      if (recenterTimerRef.current) clearTimeout(recenterTimerRef.current);
-      recenterTimerRef.current = setTimeout(() => {
-        const b = bucketRef.current;
-        const d = dataRef.current;
-        if (!d?.series.length) return;
+      const bounds = historyBoundsRef.current;
+      if (direction === "older" && !canPanOlder(d.start, bounds, b)) return;
+      if (direction === "newer" && !canPanNewer(d.end, bounds, b)) return;
 
-        const bounds = historyBoundsRef.current;
-        if (direction === "older" && !canPanOlder(d.start, bounds, b)) return;
-        if (direction === "newer" && !canPanNewer(d.end, bounds, b)) return;
+      const preserveVisible = visibleAbsoluteRange(
+        { start: d.start, end: d.end },
+        { ...labelState.zoom },
+      );
 
-        lastRecenterKeyRef.current = recenterKey;
-        isRecenteringRef.current = true;
+      isPanShiftRef.current = true;
+      const range = shiftLoadedRange(
+        { start: d.start, end: d.end },
+        direction,
+        b,
+        bounds,
+      );
 
-        const split = direction === "older" ? WINDOW_SPLIT_OLDER : WINDOW_SPLIT_NEWER;
-        const anchorMs = bucketStartMs(anchorIso, b);
-        const range = rangeAroundAnchor(anchorMs, b, split, bounds);
-        const anchorPosition = direction === "older" ? 0.25 : 0.75;
-
-        void load(bucketRef.current, highlightRef.current, {
-          panShift: true,
-          range,
-          anchorIso,
-          anchorPosition,
-        });
-      }, RECENTER_DEBOUNCE_MS);
+      void load(b, highlightRef.current, {
+        panShift: true,
+        range,
+        preserveVisible,
+      });
     },
     [load],
   );
+
+  useEffect(() => {
+    const onMouseUp = () => {
+      const edge = pendingEdgeRef.current;
+      pendingEdgeRef.current = null;
+      if (!edge) return;
+      runEdgePanShift(edge);
+    };
+    window.addEventListener("mouseup", onMouseUp);
+    return () => window.removeEventListener("mouseup", onMouseUp);
+  }, [runEdgePanShift]);
 
   const onEvents = useMemo(
     () => ({
@@ -914,30 +1165,28 @@ export function TimelineChart({ tableHighlightContext }: Props) {
         setPinnedZoom(null);
         setLabelRefresh((n) => n + 1);
 
-        if (isRecenteringRef.current) return;
-
-        if (zoom.start > EDGE_PAN_THRESHOLD_PCT + 2 && zoom.end < 100 - EDGE_PAN_THRESHOLD_PCT - 2) {
-          lastRecenterKeyRef.current = "";
-        }
+        if (isPanShiftRef.current) return;
 
         const d = dataRef.current;
         const b = bucketRef.current;
         if (!d?.series.length) return;
 
-        const categories = d.series[0].buckets.map((x) => x.bucket_start);
-        const n = categories.length;
-        if (n < 2) return;
-
         const bounds = historyBoundsRef.current;
+        pendingEdgeRef.current = null;
+
+        if (wheelDispatchRef.current) {
+          wheelDispatchRef.current = false;
+          return;
+        }
 
         if (zoom.start <= EDGE_PAN_THRESHOLD_PCT && canPanOlder(d.start, bounds, b)) {
-          scheduleEdgeRecenter("older", categories[0]);
+          pendingEdgeRef.current = "older";
         } else if (zoom.end >= 100 - EDGE_PAN_THRESHOLD_PCT && canPanNewer(d.end, bounds, b)) {
-          scheduleEdgeRecenter("newer", categories[n - 1]);
+          pendingEdgeRef.current = "newer";
         }
       },
     }),
-    [scheduleEdgeRecenter],
+    [],
   );
 
   useEffect(() => {
@@ -979,17 +1228,19 @@ export function TimelineChart({ tableHighlightContext }: Props) {
           </div>
         ) : (
           <ReactECharts
+            ref={chartRef}
             key={chartKey}
             option={option}
             style={{ height: 320 }}
             notMerge={false}
             lazyUpdate
             onEvents={onEvents}
+            onChartReady={(instance) => setupChartWheel(instance)}
           />
         )}
       </div>
       <p className="mt-2 text-center text-[10px] text-muted-foreground">
-        Hover bars for bucket details · Drag slider or scroll to move through history
+        Hover bars for bucket details · Scroll to pan · Ctrl+scroll to zoom · Drag time bar to select range
       </p>
     </div>
   );

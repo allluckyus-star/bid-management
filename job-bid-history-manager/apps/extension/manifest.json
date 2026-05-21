@@ -6,7 +6,8 @@
   "permissions": ["storage", "activeTab", "scripting", "contextMenus", "notifications"],
   "host_permissions": [
     "http://127.0.0.1:5123/*",
-    "http://localhost:5123/*"
+    "http://localhost:5123/*",
+    "http://*/*"
   ],
   "action": {
     "default_popup": "popup.html",

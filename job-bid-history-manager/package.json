@@ -8,9 +8,11 @@
   ],
   "scripts": {
     "dev:api": "npm run dev -w @jbhm/api",
+    "dev:api:lan": "npm run dev:lan -w @jbhm/api",
     "seed": "npm run seed -w @jbhm/api",
     "seed:reset": "npm run seed:reset -w @jbhm/api",
     "dev:desktop": "npm run dev -w @jbhm/desktop",
+    "dev:web:lan": "npm run dev:lan -w @jbhm/desktop",
     "build:desktop": "npm run build -w @jbhm/desktop",
     "build:shared": "npm run build -w @jbhm/shared"
   }

@@ -15,16 +15,16 @@ BUCKET_SECONDS = {
 VALID_BUCKETS = frozenset({*BUCKET_SECONDS.keys(), "1month"})
 
 MAX_TIMELINE_BUCKETS: dict[str, int] = {
-    "1h": 336,   # 14 days of hours — keeps hour view responsive
+    "1h": 744,   # up to ~31 days of hours when client requests a range
     "1d": 366,
     "1month": 120,
 }
 
-# Default lookback when client does not pass start (hour view avoids loading years of slots)
+# Default lookback when client does not pass start/end (client normally sends an explicit range)
 DEFAULT_LOOKBACK: dict[str, timedelta] = {
-    "1h": timedelta(days=14),
-    "1d": timedelta(days=400),
-    "1month": timedelta(days=3650),
+    "1h": timedelta(days=7),
+    "1d": timedelta(days=30),
+    "1month": timedelta(days=180),
 }
 
 
@@ -32,11 +32,30 @@ def _parse_dt(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def _ensure_aware(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _local_midnight(dt: datetime) -> datetime:
+    """Start of calendar day in server local timezone (matches desktop +1 demo)."""
+    local = _ensure_aware(dt).astimezone()
+    return local.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _local_day_slot_iso(local_midnight: datetime) -> str:
+    """Naive local ISO so the chart parses the bucket as local midnight."""
+    return local_midnight.strftime("%Y-%m-%dT00:00:00")
+
+
 def _floor_bucket(dt: datetime, bucket: str) -> datetime:
     if bucket == "1month":
         return dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+    if bucket == "1d":
+        return _local_midnight(dt)
     bucket_sec = BUCKET_SECONDS[bucket]
-    ts = int(dt.timestamp())
+    ts = int(_ensure_aware(dt).timestamp())
     floored = ts - (ts % bucket_sec)
     return datetime.fromtimestamp(floored, tz=timezone.utc)
 
@@ -46,6 +65,8 @@ def _add_bucket(dt: datetime, bucket: str) -> datetime:
         if dt.month == 12:
             return dt.replace(year=dt.year + 1, month=1, day=1)
         return dt.replace(month=dt.month + 1, day=1)
+    if bucket == "1d":
+        return dt + timedelta(days=1)
     return dt + timedelta(seconds=BUCKET_SECONDS[bucket])
 
 
@@ -73,7 +94,6 @@ def _bucket_end_inclusive(bucket_start: datetime, bucket: str) -> datetime:
             minute=59,
             second=59,
             microsecond=999999,
-            tzinfo=timezone.utc,
         )
     return _add_bucket(bucket_start, bucket) - timedelta(microseconds=1)
 
@@ -90,7 +110,10 @@ def _iter_bucket_starts(start_dt: datetime, end_dt: datetime, bucket: str) -> li
     end_floor = _floor_bucket(end_dt, bucket)
     slots: list[str] = []
     while current <= end_floor:
-        slots.append(current.isoformat())
+        if bucket == "1d":
+            slots.append(_local_day_slot_iso(current))
+        else:
+            slots.append(current.isoformat())
         current = _add_bucket(current, bucket)
     return slots
 
@@ -129,6 +152,8 @@ def _default_range_start(now: datetime, bucket: str, global_min: datetime | None
 def _sql_bucket_expr(bucket: str) -> str:
     if bucket == "1month":
         return "strftime('%Y-%m-01T00:00:00Z', j.captured_at)"
+    if bucket == "1d":
+        return "strftime('%Y-%m-%d', j.captured_at, 'localtime')"
     sec = BUCKET_SECONDS[bucket]
     return (
         f"strftime('%Y-%m-%dT%H:%M:%SZ', "
@@ -139,8 +164,15 @@ def _sql_bucket_expr(bucket: str) -> str:
 def _bucket_key_from_sql(value: str, bucket: str) -> str:
     if not value:
         return value
+    if bucket == "1d" and len(value) == 10 and value[4] == "-":
+        return f"{value}T00:00:00"
     if value.endswith("Z") or "+" in value:
-        return _floor_bucket(_parse_dt(value), bucket).isoformat()
+        floored = _floor_bucket(_parse_dt(value), bucket)
+        if bucket == "1d":
+            return _local_day_slot_iso(floored)
+        return floored.isoformat()
+    if bucket == "1d":
+        return _local_day_slot_iso(_floor_bucket(_parse_dt(value.replace(" ", "T") + "+00:00"), bucket))
     return _floor_bucket(_parse_dt(value.replace(" ", "T") + "+00:00"), bucket).isoformat()
 
 
@@ -225,6 +257,8 @@ def timeline_analytics(
     now = datetime.now(timezone.utc)
     global_min, global_max = _global_data_extent(conn)
 
+    explicit_window = bool(start and end)
+
     if end:
         end_dt = _parse_dt(end)
     elif global_max:
@@ -248,8 +282,9 @@ def timeline_analytics(
         _build_fts_query=build_fts_query,
     )
 
-    view_future_floor = _floor_bucket(_view_future_end(now, bucket), bucket)
-    end_dt = max(end_dt, view_future_floor)
+    if not explicit_window:
+        view_future_floor = _floor_bucket(_view_future_end(now, bucket), bucket)
+        end_dt = max(end_dt, view_future_floor)
 
     include_companies = bucket != "1h"
     counts, companies, users = _aggregate_timeline(
@@ -260,13 +295,16 @@ def timeline_analytics(
         include_companies=include_companies,
     )
 
-    if users:
+    if users and not explicit_window:
         data_min = min(_parse_dt(k[0]) for k in counts if k[0]) if counts else start_dt
         data_max_key = max(k[0] for k in counts if k[0]) if counts else end_dt.isoformat()
         data_max = _add_bucket(_parse_dt(data_max_key), bucket)
         start_dt = max(start_dt, _floor_bucket(data_min, bucket))
         end_dt = max(end_dt, data_max, view_future_floor)
         start_dt = _clamp_start_for_max_buckets(start_dt, end_dt, bucket)
+    elif users:
+        # Client window (e.g. May 5–May 18): keep requested span; slots include empty hours
+        pass
     else:
         users = {
             u

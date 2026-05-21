@@ -260,7 +260,7 @@ export default function App() {
             }}
           />
 
-          <TimelineChart tableHighlightContext={listContext} />
+          <TimelineChart tableHighlightContext={listContext} dark={dark} />
 
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <span className="text-xs text-muted-foreground">
