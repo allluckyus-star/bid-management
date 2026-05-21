@@ -14,6 +14,7 @@
     "dev:desktop": "npm run dev -w @jbhm/desktop",
     "dev:web:lan": "npm run dev:lan -w @jbhm/desktop",
     "build:desktop": "npm run build -w @jbhm/desktop",
+    "build:client": "npm run build:shared && npm run tauri:build:client -w @jbhm/desktop",
     "build:shared": "npm run build -w @jbhm/shared"
   }
 }

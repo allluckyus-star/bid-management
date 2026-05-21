@@ -51,10 +51,7 @@ function clampRange(
     e = s + width;
   }
   if (bounds.maxMs != null) {
-    const maxEnd =
-      bucket === "1month"
-        ? endOfUtcMonth(floorBucketMs(bounds.maxMs, bucket))
-        : bounds.maxMs + (bucket === "1d" ? DAY_MS : 3600000);
+    const maxEnd = bounds.maxMs + (bucket === "1d" ? DAY_MS : 3600000);
     if (e > maxEnd) {
       e = maxEnd;
       s = Math.max(bounds.minMs ?? s, e - width);
@@ -116,10 +113,7 @@ export function shiftLoadedRange(
     newEndMs = newStartMs + width;
   }
   if (bounds.maxMs != null) {
-    const maxEnd =
-      bucket === "1month"
-        ? endOfUtcMonth(floorBucketMs(bounds.maxMs, bucket))
-        : bounds.maxMs + (bucket === "1d" ? DAY_MS : 3600000);
+    const maxEnd = bounds.maxMs + (bucket === "1d" ? DAY_MS : 3600000);
     if (newEndMs > maxEnd) {
       newEndMs = maxEnd;
       newStartMs = newEndMs - width;
@@ -170,7 +164,7 @@ export function visibleAbsoluteRange(loaded: TimeRange, zoom: ZoomRange): { star
  * After (x,y)→(x−3d,y−3d), move the slider so the same bucket columns stay in view.
  */
 export function zoomPreservingVisibleRange(
-  newLoaded: TimeRange,
+  _newLoaded: TimeRange,
   categories: string[],
   visible: { startMs: number; endMs: number },
   maxVisibleBars: number,

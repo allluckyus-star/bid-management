@@ -20,7 +20,15 @@ import { JobsTable } from "@/components/jobs-table";
 import { TablePagination } from "@/components/table-pagination";
 import { TagManagerDialog } from "@/components/tag-manager-dialog";
 import { TimelineChart } from "@/components/timeline-chart";
+import { ApiSettingsDialog } from "@/components/api-settings-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  ensureExtensionFolder,
+  openExtensionFolder,
+  type ExtensionInstallInfo,
+} from "@/lib/extension-installer";
+import { fetchClientInfo, isClientMode, type ClientInfo } from "@/lib/client";
+import { getApiBaseUrl } from "@/lib/settings";
 import {
   bulkDeleteJobs,
   fetchCapturedByUsers,
@@ -51,6 +59,11 @@ export default function App() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [capturedByUsers, setCapturedByUsers] = useState<string[]>([]);
+  const clientMode = isClientMode();
+  const [apiBaseUrl, setApiBaseUrl] = useState(getApiBaseUrl());
+  const [clientInfo, setClientInfo] = useState<ClientInfo | null>(null);
+  const [extensionInfo, setExtensionInfo] = useState<ExtensionInstallInfo | null>(null);
+  const [openingExtensionFolder, setOpeningExtensionFolder] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
@@ -61,6 +74,28 @@ export default function App() {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
   }, [dark]);
+
+  useEffect(() => {
+    let active = true;
+
+    void ensureExtensionFolder()
+      .then((info) => {
+        if (active && info) setExtensionInfo(info);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Failed to prepare Chrome extension");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!clientMode) return;
+    void fetchClientInfo().then(setClientInfo);
+  }, [clientMode]);
 
   const debouncedSearch = useDebouncedValue(filters.column_search ?? {}, 350);
 
@@ -189,6 +224,18 @@ export default function App() {
     }
   };
 
+  const handleOpenExtensionFolder = async () => {
+    setOpeningExtensionFolder(true);
+    try {
+      const info = await openExtensionFolder();
+      if (info) setExtensionInfo(info);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to open Chrome extension folder");
+    } finally {
+      setOpeningExtensionFolder(false);
+    }
+  };
+
   return (
     <div className="min-h-screen">
       <header className="border-b bg-card/80 backdrop-blur">
@@ -196,26 +243,74 @@ export default function App() {
           <div>
             <h1 className="text-xl font-bold tracking-tight">Job Bid History Manager</h1>
             <p className="text-sm text-muted-foreground">
-              Local-first · Extension capture · Ollama · Resumes · Timeline
+              {clientMode
+                ? "Teammate client · Local proxy · Extension capture"
+                : "Local-first · Extension capture · Ollama · Resumes · Timeline"}
             </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {clientMode ? (
+                <>
+                  Local API: <code>{apiBaseUrl}</code>
+                  {clientInfo?.upstream_url ? (
+                    <>
+                      {" "}
+                      → host <code>{clientInfo.upstream_url}</code>
+                    </>
+                  ) : (
+                    <span className="text-amber-700 dark:text-amber-300">
+                      {" "}
+                      · Set <strong>Host Server</strong> to your team lead PC
+                    </span>
+                  )}
+                </>
+              ) : (
+                <>
+                  API host: <code>{apiBaseUrl}</code>
+                </>
+              )}
+            </p>
+            {extensionInfo ? (
+              <p className="text-xs text-muted-foreground mt-1">
+                Chrome extension: <code>{extensionInfo.path}</code>
+              </p>
+            ) : null}
           </div>
           <div className="flex items-center gap-2">
             <TagManagerDialog tags={allTags} onUpdated={() => void load()} />
+            <ApiSettingsDialog
+              onSaved={() => {
+                setApiBaseUrl(getApiBaseUrl());
+                if (clientMode) void fetchClientInfo().then(setClientInfo);
+                void load();
+              }}
+            />
             <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
               <RefreshCw className={`mr-1 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               Refresh
             </Button>
             <Button
-              variant="secondary"
+              variant="outline"
               size="sm"
-              onClick={() => void handleSeedSample(false)}
-              disabled={seedingSample}
+              onClick={() => void handleOpenExtensionFolder()}
+              disabled={openingExtensionFolder}
             >
-              {seedingSample ? "Loading…" : "Load sample data"}
+              {openingExtensionFolder ? "Opening…" : "Extension Folder"}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => void handleSeed()} disabled={seeding}>
-              {seeding ? "Seeding…" : "+1 demo"}
-            </Button>
+            {!clientMode ? (
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void handleSeedSample(false)}
+                  disabled={seedingSample}
+                >
+                  {seedingSample ? "Loading…" : "Load sample data"}
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => void handleSeed()} disabled={seeding}>
+                  {seeding ? "Seeding…" : "+1 demo"}
+                </Button>
+              </>
+            ) : null}
             <Button variant="ghost" size="icon" onClick={() => setDark((d) => !d)}>
               {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
@@ -232,12 +327,47 @@ export default function App() {
           >
             {error}
             <span className="mt-1 block text-xs opacity-80">
-              API: <code>npm run dev:api</code> on port 5123 · Ollama optional (set JBHM_USE_MOCK_EXTRACTION=true)
+              {clientMode ? (
+                <>
+                  Ensure the team host runs <code>npm run dev:api:lan</code>, set <strong>Host Server</strong> to{" "}
+                  <code>http://HOST_IP:5123</code>, and keep extension API at <code>http://127.0.0.1:5123</code>.
+                </>
+              ) : (
+                <>
+                  API: <code>npm run dev:api</code> on port 5123 · Ollama optional (set JBHM_USE_MOCK_EXTRACTION=true)
+                </>
+              )}
             </span>
           </motion.div>
         )}
 
         <DashboardCards summary={summary} loading={loading} />
+
+        {extensionInfo ? (
+          <section className="rounded-xl border bg-card p-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold">Chrome extension setup</h2>
+                <p className="text-sm text-muted-foreground">
+                  Open <code>chrome://extensions</code>, enable Developer mode, then click Load unpacked and select
+                  this folder. In the extension popup, set API URL to <code>http://127.0.0.1:5123</code> and your name
+                  under Captured by.
+                </p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  <code>{extensionInfo.path}</code>
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleOpenExtensionFolder()}
+                disabled={openingExtensionFolder}
+              >
+                {openingExtensionFolder ? "Opening…" : "Open Folder"}
+              </Button>
+            </div>
+          </section>
+        ) : null}
 
         <section className="rounded-xl border bg-card p-4 shadow-sm">
           <FilterBar

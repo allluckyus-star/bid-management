@@ -68,6 +68,10 @@ npm run dev:desktop
 
 Open http://127.0.0.1:1420
 
+### Teammate client `.exe` (local proxy → host)
+
+See **[docs/CLIENT.md](docs/CLIENT.md)**. Build with `npm run build:client`. Teammates run one installer; host keeps `npm run dev:api:lan` while debugging.
+
 ### Chrome extension
 
 1. `chrome://extensions` → Developer mode → **Load unpacked** → `apps/extension`

@@ -15,15 +15,18 @@ import type {
   TimelineResponse,
 } from "@jbhm/shared";
 import { API_DEFAULT_BASE_URL } from "@jbhm/shared";
+import { getApiBaseUrl } from "./settings";
 
-const baseUrl = import.meta.env.VITE_API_BASE_URL ?? API_DEFAULT_BASE_URL;
+function getBaseUrl(): string {
+  return getApiBaseUrl() ?? API_DEFAULT_BASE_URL;
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { ...(init?.headers as Record<string, string>) };
   if (!(init?.body instanceof FormData)) {
     headers["Content-Type"] = headers["Content-Type"] ?? "application/json";
   }
-  const res = await fetch(`${baseUrl}${path}`, { ...init, headers });
+  const res = await fetch(`${getBaseUrl()}${path}`, { ...init, headers });
   if (!res.ok) {
     let detail = await res.text();
     try {
@@ -191,7 +194,7 @@ export async function fetchResumePreview(resumeFileId: string): Promise<string> 
 }
 
 export function resumeDownloadUrl(resumeFileId: string): string {
-  return `${baseUrl}/resumes/${resumeFileId}/download`;
+  return `${getBaseUrl()}/resumes/${resumeFileId}/download`;
 }
 
 export async function fetchTimeline(

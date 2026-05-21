@@ -283,11 +283,6 @@ function bucketStartMs(startIso: string, bucketKey: TimelineBucketKey): number {
 }
 
 /** Local calendar day key — matches day-axis labels (toLocaleDateString). */
-function localDayKey(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
-}
-
 function localMonthKey(ms: number): string {
   const d = new Date(ms);
   return `${d.getFullYear()}-${d.getMonth() + 1}`;
