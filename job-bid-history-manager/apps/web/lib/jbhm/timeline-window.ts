@@ -4,6 +4,8 @@ const DAY_MS = 86400000;
 
 /** Visible range width + pan step per bucket (client-driven; not the old 14-day-only history cap). */
 export const VIEW_WINDOW = {
+  "5m": { initialHalfDays: 2, panStepDays: 1 },
+  "30m": { initialHalfDays: 7, panStepDays: 2 },
   "1h": { initialHalfDays: 7, panStepDays: 3 },
   "1d": { initialHalfDays: 30, panStepDays: 10 },
   "1month": { initialHalfMonths: 1, panStepMonths: 1 },
@@ -20,6 +22,12 @@ export function floorBucketMs(ms: number, bucket: TimelineBucketKey): number {
   }
   if (bucket === "1d") {
     return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
+  }
+  if (bucket === "30m") {
+    return Math.floor(ms / (30 * 60 * 1000)) * (30 * 60 * 1000);
+  }
+  if (bucket === "5m") {
+    return Math.floor(ms / (5 * 60 * 1000)) * (5 * 60 * 1000);
   }
   return Math.floor(ms / 3600000) * 3600000;
 }

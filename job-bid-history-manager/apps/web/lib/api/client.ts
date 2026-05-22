@@ -13,6 +13,7 @@ import type {
   TimelineBucketKey,
   TimelineResponse,
 } from "@jbhm/shared";
+import { timedRequest } from "@/lib/api/timed-request";
 
 const COL_QUERY_KEYS: Record<string, string> = {
   captured_at: "col_captured_at",
@@ -101,20 +102,27 @@ export async function fetchColumnValues(
 }
 
 export async function fetchJobs(filters?: JobFilters): Promise<JobListResponse> {
-  return request<JobListResponse>(`/api/jobs${toQuery(filters)}`);
+  return timedRequest<JobListResponse>("jobs fetch", `/api/jobs${toQuery(filters)}`);
 }
 
 export async function fetchDashboard(): Promise<DashboardSummary> {
-  return request<DashboardSummary>("/api/jobs/dashboard/summary");
+  return timedRequest<DashboardSummary>("dashboard fetch", "/api/jobs/dashboard/summary");
 }
 
 export async function fetchCapturedByUsers(): Promise<string[]> {
-  const res = await request<{ users: string[] }>("/api/jobs/meta/captured-by");
+  const res = await timedRequest<{ users: string[] }>(
+    "users fetch",
+    "/api/jobs/meta/captured-by",
+  );
   return res.users;
 }
 
 export async function fetchTags(): Promise<Tag[]> {
-  return request<Tag[]>("/api/tags");
+  return timedRequest<Tag[]>("tags fetch", "/api/tags");
+}
+
+export async function fetchJob(jobId: string): Promise<JobListItem> {
+  return timedRequest<JobListItem>("job fetch", `/api/jobs/${jobId}`);
 }
 
 export async function createTag(payload: TagCreate): Promise<Tag> {
@@ -195,16 +203,10 @@ export async function fetchTimeline(
   if (range?.start) q.set("start", range.start);
   if (range?.end) q.set("end", range.end);
   appendListFilters(q, tableHighlight);
-  return request<TimelineResponse>(`/api/analytics/timeline?${q.toString()}`);
-}
-
-export type TimelineJobRow = {
-  captured_at: string;
-  captured_by: string | null;
-  company_name: string | null;
-};
-
-/** All jobs for timeline chart — bucket/range aggregation runs in the browser. */
-export async function fetchTimelineRows(): Promise<{ rows: TimelineJobRow[] }> {
-  return request<{ rows: TimelineJobRow[] }>("/api/analytics/timeline/rows");
+  return timedRequest<TimelineResponse>(
+    "timeline fetch",
+    `/api/analytics/timeline?${q.toString()}`,
+    undefined,
+    25_000,
+  );
 }

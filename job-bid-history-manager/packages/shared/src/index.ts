@@ -197,4 +197,12 @@ export type TimelineResponse = {
   series: TimelineSeries[];
 };
 
-export type TimelineBucketKey = "1h" | "1d" | "1month";
+export type TimelineBucketKey = "5m" | "30m" | "1h" | "1d" | "1month";
+
+/** Compact aggregated timeline row (server → client). */
+export type TimelineAggRow = {
+  bucket_start: string;
+  captured_by: string;
+  count: number;
+  companies: { company: string; count: number }[];
+};

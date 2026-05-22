@@ -74,7 +74,7 @@ export function ColumnValueFilterDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+    <Dialog open={open} onOpenChange={(v: boolean) => !v && onClose()}>
       <DialogContent className="max-w-sm gap-3">
         <DialogHeader>
           <DialogTitle className="text-base">Filter — {COLUMN_LABELS[field]}</DialogTitle>
@@ -87,7 +87,10 @@ export function ColumnValueFilterDialog({
         ) : (
           <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
             <label className="flex cursor-pointer items-center gap-2 rounded-md border border-input px-2 py-1.5 text-sm font-medium">
-              <Checkbox checked={allChecked} onCheckedChange={(v) => toggleAll(!!v)} />
+              <Checkbox
+                checked={allChecked}
+                onCheckedChange={(v: boolean | "indeterminate") => toggleAll(!!v)}
+              />
               <span>(All)</span>
               <span className="ml-auto text-xs text-muted-foreground">{totalCount}</span>
             </label>
@@ -99,7 +102,9 @@ export function ColumnValueFilterDialog({
                 <Checkbox
                   checked={allChecked || draft.has(opt.value)}
                   disabled={allChecked}
-                  onCheckedChange={(v) => toggleValue(opt.value, !!v)}
+                  onCheckedChange={(v: boolean | "indeterminate") =>
+                    toggleValue(opt.value, !!v)
+                  }
                 />
                 <span className="truncate">{opt.value}</span>
                 <span className="ml-auto shrink-0 text-xs text-muted-foreground">{opt.count}</span>

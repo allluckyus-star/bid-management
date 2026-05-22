@@ -17,6 +17,7 @@ import type {
 } from "@jbhm/shared";
 import { AnimatePresence, motion } from "framer-motion";
 import { ExternalLink } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import { ColumnSearchDialog } from "@/components/jbhm/column-search-dialog";
 import { ColumnValueFilterDialog } from "@/components/jbhm/column-value-filter-dialog";
@@ -24,7 +25,14 @@ import { EditableCell } from "@/components/jbhm/editable-cell";
 import { JdCell } from "@/components/jbhm/jd-cell";
 import { NotesCell } from "@/components/jbhm/notes-cell";
 import { ResumeCell } from "@/components/jbhm/resume-cell";
-import { TextPreviewDialog } from "@/components/jbhm/text-preview-dialog";
+
+const TextPreviewDialog = dynamic(
+  () =>
+    import("@/components/jbhm/text-preview-dialog").then((m) => ({
+      default: m.TextPreviewDialog,
+    })),
+  { ssr: false },
+);
 import { TableColumnHeader } from "@/components/jbhm/table-column-header";
 import { TagCell } from "@/components/jbhm/tag-cell";
 import { Button } from "@/components/ui/button";
@@ -38,7 +46,7 @@ import {
 } from "@/components/ui/dialog";
 import { TableInteractionContext } from "@/context/table-interaction";
 import { useHoldKey } from "@/hooks/use-interaction-hold";
-import { fetchJobJd, fetchResumePreview, patchJob } from "@/lib/api/client";
+import { fetchJob, fetchJobJd, fetchResumePreview, patchJob } from "@/lib/api/client";
 import { notifyActionSuccess, notifyLoadError } from "@/lib/jbhm/notify";
 import {
   COLUMN_CONTROLS,
@@ -126,8 +134,16 @@ export function JobsTable({
     }
   };
 
-  const openNotes = (job: JobListItem) => {
-    setNotesDialog({ jobId: job.id, body: job.notes ?? "" });
+  const openNotes = async (job: JobListItem) => {
+    setOverlayBusy(true);
+    try {
+      const detail = await fetchJob(job.id);
+      setNotesDialog({ jobId: job.id, body: detail.notes ?? "" });
+    } catch (e) {
+      notifyLoadError(e instanceof Error ? e.message : "Failed to load notes");
+    } finally {
+      setOverlayBusy(false);
+    }
   };
 
   const saveNotes = async () => {
@@ -195,7 +211,9 @@ export function JobsTable({
         cell: ({ row }) => (
           <Checkbox
             checked={row.getIsSelected()}
-            onCheckedChange={(value) => row.toggleSelected(!!value)}
+            onCheckedChange={(value: boolean | "indeterminate") =>
+              row.toggleSelected(!!value)
+            }
             aria-label="Select row"
           />
         ),
@@ -353,7 +371,9 @@ export function JobsTable({
                 table.getIsAllPageRowsSelected() ||
                 (table.getIsSomePageRowsSelected() && "indeterminate")
               }
-              onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+              onCheckedChange={(value: boolean | "indeterminate") =>
+                table.toggleAllPageRowsSelected(!!value)
+              }
               aria-label="Select all on this page"
             />
           </div>
@@ -455,7 +475,7 @@ export function JobsTable({
 
       <TextPreviewDialog
         open={!!jdDialog}
-        onOpenChange={(open) => {
+        onOpenChange={(open: boolean) => {
           if (!open) setJdDialog(null);
         }}
         title={
@@ -468,7 +488,7 @@ export function JobsTable({
 
       <Dialog
         open={!!notesDialog}
-        onOpenChange={(open) => {
+        onOpenChange={(open: boolean) => {
           if (!open) setNotesDialog(null);
         }}
       >
@@ -497,7 +517,7 @@ export function JobsTable({
 
       <TextPreviewDialog
         open={!!resumeDialog}
-        onOpenChange={(open) => {
+        onOpenChange={(open: boolean) => {
           if (!open) setResumeDialog(null);
         }}
         title={resumeDialog?.title ?? "Resume"}

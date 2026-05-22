@@ -6,6 +6,10 @@ export type TimelineJobRow = {
   company_name: string | null;
 };
 
+const MS_5M = 5 * 60 * 1000;
+const MS_30M = 30 * 60 * 1000;
+const MS_1H = 3600 * 1000;
+
 function floorBucket(iso: string, bucket: TimelineBucketKey): string {
   const d = new Date(iso);
   if (bucket === "1month") {
@@ -16,8 +20,15 @@ function floorBucket(iso: string, bucket: TimelineBucketKey): string {
     local.setHours(0, 0, 0, 0);
     return local.toISOString().slice(0, 10) + "T00:00:00";
   }
-  const h = 3600 * 1000;
-  const t = Math.floor(d.getTime() / h) * h;
+  if (bucket === "30m") {
+    const t = Math.floor(d.getTime() / MS_30M) * MS_30M;
+    return new Date(t).toISOString();
+  }
+  if (bucket === "5m") {
+    const t = Math.floor(d.getTime() / MS_5M) * MS_5M;
+    return new Date(t).toISOString();
+  }
+  const t = Math.floor(d.getTime() / MS_1H) * MS_1H;
   return new Date(t).toISOString();
 }
 
@@ -29,7 +40,13 @@ function addBucket(slot: string, bucket: TimelineBucketKey): string {
   if (bucket === "1d") {
     return new Date(d.getTime() + 86400000).toISOString();
   }
-  return new Date(d.getTime() + 3600000).toISOString();
+  if (bucket === "30m") {
+    return new Date(d.getTime() + MS_30M).toISOString();
+  }
+  if (bucket === "5m") {
+    return new Date(d.getTime() + MS_5M).toISOString();
+  }
+  return new Date(d.getTime() + MS_1H).toISOString();
 }
 
 function jobMatchesHighlight(job: TimelineJobRow, filters?: JobFilters): boolean {
@@ -51,7 +68,17 @@ export function buildTimelineFromRows(
   const startDt = start
     ? new Date(start)
     : new Date(
-        endDt.getTime() - (bucket === "1month" ? 180 : bucket === "1d" ? 30 : 7) * 86400000,
+        endDt.getTime() -
+          (bucket === "1month"
+            ? 180
+            : bucket === "1d"
+              ? 30
+              : bucket === "30m"
+                ? 14
+                : bucket === "5m"
+                  ? 3
+                  : 7) *
+            86400000,
       );
 
   const startIso = startDt.toISOString();

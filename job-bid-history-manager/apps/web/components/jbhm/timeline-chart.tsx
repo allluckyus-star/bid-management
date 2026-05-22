@@ -1,9 +1,9 @@
 import type { TimelineBucketKey } from "@jbhm/shared";
+import type { EChartsType } from "echarts";
 import ReactECharts from "echarts-for-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { fetchTimelineRows } from "@/lib/api/client";
-import { buildTimelineFromRows } from "@/lib/analytics/build-timeline";
+import type { TimelineResponse } from "@jbhm/shared";
 import {
   colorForUser,
   sortedUserNames,
@@ -23,6 +23,8 @@ import {
 } from "@/lib/jbhm/timeline-window";
 
 const BUCKETS: { key: TimelineBucketKey; label: string }[] = [
+  { key: "5m", label: "5m" },
+  { key: "30m", label: "30m" },
   { key: "1h", label: "Hour" },
   { key: "1d", label: "Day" },
   { key: "1month", label: "Month" },
@@ -177,6 +179,8 @@ const HEAVY_CATEGORY_COUNT = 80;
 
 /** Max bars visible when fully zoomed out (zoom cannot show more than this at once) */
 const MAX_VISIBLE_IN_VIEW: Record<TimelineBucketKey, number> = {
+  "5m": 48,
+  "30m": 48,
   "1month": 24,
   "1d": 31,
   "1h": 40,
@@ -184,6 +188,8 @@ const MAX_VISIBLE_IN_VIEW: Record<TimelineBucketKey, number> = {
 
 /** Bars visible on first load, centered on now */
 const INITIAL_VIEW: Record<TimelineBucketKey, { before: number; after: number }> = {
+  "5m": { before: 12, after: 12 },
+  "30m": { before: 10, after: 10 },
   "1month": { before: 1, after: 1 },
   "1d": { before: 10, after: 10 },
   "1h": { before: 8, after: 8 },
@@ -291,6 +297,8 @@ function bucketEndMs(startIso: string, bucketKey: TimelineBucketKey): number {
   }
   if (bucketKey === "1d") return localCalendarDayBounds(startIso).endMs;
   const start = new Date(startIso).getTime();
+  if (bucketKey === "30m") return start + 30 * 60 * 1000 - 1;
+  if (bucketKey === "5m") return start + 5 * 60 * 1000 - 1;
   return start + 3600000 - 1;
 }
 
@@ -646,28 +654,39 @@ function filledBarStyle(color: string): BarItemStyle {
   return { color, opacity: 1 };
 }
 
-type Props = {
+export type TimelineChartProps = {
   dark?: boolean;
-  /** Increment to refetch timeline data (e.g. periodic app refresh). */
-  refreshToken?: number;
-  /** When false (client waiting for proxy), do not call the API. */
-  fetchEnabled?: boolean;
+  data: TimelineResponse | null;
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+  onRequestRange: (
+    bucket: TimelineBucketKey,
+    range: { start: string; end: string },
+    opts?: {
+      resetView?: boolean;
+      preserveVisible?: { startMs: number; endMs: number };
+    },
+  ) => void;
 };
 
-export function TimelineChart({ dark = false, refreshToken = 0, fetchEnabled = true }: Props) {
+export function TimelineChart({
+  dark = false,
+  data,
+  loading,
+  error,
+  onRetry,
+  onRequestRange,
+}: TimelineChartProps) {
   const [bucket, setBucket] = useState<TimelineBucketKey>("1d");
-  const [data, setData] = useState<ReturnType<typeof buildTimelineFromRows> | null>(null);
   const [pinnedZoom, setPinnedZoom] = useState<ZoomRange | null>(null);
   const [labelRefresh, setLabelRefresh] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [rowsReady, setRowsReady] = useState(false);
-  const chartRef = useRef<InstanceType<typeof ReactECharts> | null>(null);
+  const chartRef = useRef<{ getEchartsInstance: () => EChartsType } | null>(null);
   const wheelCleanupRef = useRef<(() => void) | null>(null);
   const wheelDispatchRef = useRef(false);
-  const loadGenRef = useRef(0);
   const bucketLoadRef = useRef(0);
-  const rawRowsRef = useRef<Awaited<ReturnType<typeof fetchTimelineRows>>["rows"]>([]);
   const historyBoundsRef = useRef<HistoryBounds>({ minMs: null, maxMs: null });
+  const pendingResetRef = useRef(true);
   const pendingEdgeRef = useRef<"older" | "newer" | null>(null);
   const isPanShiftRef = useRef(false);
   const dataRef = useRef(data);
@@ -675,7 +694,7 @@ export function TimelineChart({ dark = false, refreshToken = 0, fetchEnabled = t
   dataRef.current = data;
   bucketRef.current = bucket;
 
-  const bindChartWheel = useCallback((chart: ReturnType<InstanceType<typeof ReactECharts>["getEchartsInstance"]>) => {
+  const bindChartWheel = useCallback((chart: EChartsType) => {
     const zr = chart.getZr();
     const handler = (ev: { event?: WheelEvent; stop?: () => void }) => {
       const e = ev.event;
@@ -712,7 +731,7 @@ export function TimelineChart({ dark = false, refreshToken = 0, fetchEnabled = t
   }, []);
 
   const setupChartWheel = useCallback(
-    (chart: ReturnType<InstanceType<typeof ReactECharts>["getEchartsInstance"]>) => {
+    (chart: EChartsType) => {
       wheelCleanupRef.current?.();
       wheelCleanupRef.current = bindChartWheel(chart);
     },
@@ -721,120 +740,46 @@ export function TimelineChart({ dark = false, refreshToken = 0, fetchEnabled = t
 
   useEffect(() => () => wheelCleanupRef.current?.(), []);
 
-  type LoadOpts = {
-    resetView?: boolean;
-    range?: { start: string; end: string };
-    zoomAfter?: ZoomRange;
-    panShift?: boolean;
-    preserveVisible?: { startMs: number; endMs: number };
-  };
-
-  const applyTimeline = useCallback((bucketKey: TimelineBucketKey, opts: LoadOpts = {}) => {
-    const { resetView = false, range, zoomAfter, preserveVisible } = opts;
-    const gen = ++loadGenRef.current;
-    try {
-      const effectiveRange =
-        range ?? initialRange(bucketKey, historyBoundsRef.current);
-      const res = buildTimelineFromRows(
-        rawRowsRef.current,
-        bucketKey,
-        effectiveRange.start,
-        effectiveRange.end,
-      );
-      if (gen !== loadGenRef.current) return;
-
+  const syncZoomFromData = useCallback(
+    (
+      res: TimelineResponse,
+      bucketKey: TimelineBucketKey,
+      opts?: { resetView?: boolean; preserveVisible?: { startMs: number; endMs: number } },
+    ) => {
       historyBoundsRef.current = parseHistoryBounds(res.history_start, res.history_end);
-
       const categories = res.series[0]?.buckets.map((b) => b.bucket_start) ?? [];
       let zoom: ZoomRange;
-      if (zoomAfter) {
-        zoom = zoomAfter;
-      } else if (preserveVisible && categories.length) {
+      if (opts?.preserveVisible && categories.length) {
         zoom = zoomPreservingVisibleRange(
           { start: res.start, end: res.end },
           categories,
-          preserveVisible,
+          opts.preserveVisible,
           MAX_VISIBLE_IN_VIEW[bucketKey],
         );
-      } else if (resetView) {
+      } else if (opts?.resetView) {
         zoom = initialZoomAroundNow(categories, bucketKey);
       } else {
         zoom = labelState.zoom;
       }
       labelState.zoom = zoom;
       setPinnedZoom(zoom);
-      setData(res);
-    } catch {
-      if (gen === loadGenRef.current) setData(null);
-    } finally {
-      if (gen === loadGenRef.current) {
-        isPanShiftRef.current = false;
-      }
-    }
-  }, []);
-
-  const loadRawRows = useCallback(async () => {
-    const gen = ++loadGenRef.current;
-    setLoading(true);
-    try {
-      const { rows } = await fetchTimelineRows();
-      if (gen !== loadGenRef.current) return;
-      rawRowsRef.current = rows;
-      setRowsReady(true);
-    } catch {
-      if (gen === loadGenRef.current) {
-        rawRowsRef.current = [];
-        setRowsReady(false);
-        setData(null);
-      }
-    } finally {
-      if (gen === loadGenRef.current) setLoading(false);
-    }
-  }, []);
+      isPanShiftRef.current = false;
+    },
+    [],
+  );
 
   useEffect(() => {
-    if (!fetchEnabled) return;
-    void loadRawRows();
-  }, [fetchEnabled, loadRawRows]);
-
-  useEffect(() => {
-    if (!fetchEnabled || refreshToken <= 0 || !rowsReady) return;
-    const gen = ++loadGenRef.current;
-    void (async () => {
-      try {
-        const { rows } = await fetchTimelineRows();
-        if (gen !== loadGenRef.current) return;
-        rawRowsRef.current = rows;
-        const d = dataRef.current;
-        const b = bucketRef.current;
-        if (d) {
-          applyTimeline(b, { range: { start: d.start, end: d.end } });
-        } else {
-          applyTimeline(b, {
-            resetView: true,
-            range: initialRange(b, historyBoundsRef.current),
-          });
-        }
-      } catch {
-        /* keep previous chart */
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshToken only
-  }, [refreshToken, fetchEnabled, rowsReady, applyTimeline]);
-
-  useEffect(() => {
-    if (!fetchEnabled || !rowsReady) return;
     pendingEdgeRef.current = null;
-    const token = ++bucketLoadRef.current;
-    applyTimeline(bucket, {
-      resetView: true,
-      range: initialRange(bucket, historyBoundsRef.current),
-    });
-    return () => {
-      bucketLoadRef.current = token + 1;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- bucket switch only
-  }, [bucket, rowsReady, applyTimeline, fetchEnabled]);
+    pendingResetRef.current = true;
+    onRequestRange(bucket, initialRange(bucket, historyBoundsRef.current), { resetView: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bucket switch
+  }, [bucket]);
+
+  useEffect(() => {
+    if (!data) return;
+    syncZoomFromData(data, bucket, { resetView: pendingResetRef.current });
+    pendingResetRef.current = false;
+  }, [data, bucket, syncZoomFromData]);
 
   const chartKey = useMemo(
     () =>
@@ -1053,13 +998,9 @@ export function TimelineChart({ dark = false, refreshToken = 0, fetchEnabled = t
         bounds,
       );
 
-      applyTimeline(b, {
-        panShift: true,
-        range,
-        preserveVisible,
-      });
+      onRequestRange(b, range, { preserveVisible });
     },
-    [applyTimeline],
+    [onRequestRange],
   );
 
   useEffect(() => {
@@ -1140,7 +1081,14 @@ export function TimelineChart({ dark = false, refreshToken = 0, fetchEnabled = t
       </div>
 
       <div className="relative">
-        {loading ? (
+        {error ? (
+          <div className="flex h-[280px] flex-col items-center justify-center gap-3 text-sm">
+            <p className="text-destructive">{error}</p>
+            <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+              Retry chart
+            </Button>
+          </div>
+        ) : loading && !data ? (
           <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">
             Loading chart…
           </div>

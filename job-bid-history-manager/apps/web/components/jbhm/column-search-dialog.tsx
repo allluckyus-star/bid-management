@@ -34,7 +34,7 @@ export function ColumnSearchDialog({ open, field, value, onClose, onApply }: Pro
         : "Search text…";
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+    <Dialog open={open} onOpenChange={(v: boolean) => !v && onClose()}>
       <DialogContent className="max-w-sm gap-3">
         <DialogHeader>
           <DialogTitle className="text-base">Search — {COLUMN_LABELS[field]}</DialogTitle>

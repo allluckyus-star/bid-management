@@ -47,6 +47,11 @@ function mapRow(row: JobRow): JobListItem {
   });
 
   const noteBody = row.notes?.[0]?.body ?? null;
+  const notePreview = noteBody
+    ? noteBody.length > 80
+      ? `${noteBody.slice(0, 80)}…`
+      : noteBody
+    : null;
   const resume = row.resume_files?.[0];
 
   return {
@@ -73,12 +78,8 @@ function mapRow(row: JobRow): JobListItem {
           linked_at: resume.uploaded_at,
         }
       : null,
-    notes_preview: noteBody
-      ? noteBody.length > 80
-        ? `${noteBody.slice(0, 80)}…`
-        : noteBody
-      : null,
-    notes: noteBody,
+    notes_preview: notePreview,
+    notes: null,
     has_jd: (row.job_descriptions?.length ?? 0) > 0,
   };
 }
@@ -250,5 +251,7 @@ export async function getJobById(jobId: string): Promise<JobListItem | null> {
 
   if (error) throw new Error(error.message);
   if (!data) return null;
-  return mapRow(data as unknown as JobRow);
+  const item = mapRow(data as unknown as JobRow);
+  const noteBody = (data as unknown as JobRow).notes?.[0]?.body ?? null;
+  return { ...item, notes: noteBody };
 }
