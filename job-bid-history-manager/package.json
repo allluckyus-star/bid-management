@@ -1,24 +1,15 @@
 {
   "name": "job-bid-history-manager",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
-    "dev:api": "npm run dev -w @jbhm/api",
-    "dev:api:lan": "npm run dev:lan -w @jbhm/api",
-    "seed": "npm run seed -w @jbhm/api",
-    "seed:reset": "npm run seed:reset -w @jbhm/api",
-    "demo:once": "npm run demo:once -w @jbhm/api",
-    "demo:tick": "npm run demo:tick -w @jbhm/api",
+    "dev": "npm run dev:web",
     "dev:web": "npm run build:shared && npm run dev -w @jbhm/web",
     "build:web": "npm run build:shared && npm run build -w @jbhm/web",
-    "dev:desktop": "npm run dev -w @jbhm/desktop",
-    "dev:web:lan": "npm run dev:lan -w @jbhm/desktop",
-    "build:desktop": "npm run build -w @jbhm/desktop",
-    "build:client": "node scripts/bundle-client.mjs",
     "build:shared": "npm run build -w @jbhm/shared",
     "generate:icons": "node scripts/generate-icons.mjs"
   },

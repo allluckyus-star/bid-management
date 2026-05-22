@@ -8,7 +8,7 @@ Header: `Authorization: Bearer jbhm_…`
 ## Setup
 
 1. Run the web app (`npm run dev:web`) or use your Vercel URL.
-2. Sign in → Dashboard → **Create capture token** (copy once).
+2. Sign in → Dashboard → **Extension** → **Create capture token** (copy once).
 3. Extension popup:
    - **Web app URL** — e.g. `http://localhost:3000`
    - **Capture token** — paste from dashboard

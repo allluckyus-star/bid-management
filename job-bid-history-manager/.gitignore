@@ -1,13 +1,7 @@
 node_modules/
 build/
 dist/
-*.db
-apps/api/data/
 .DS_Store
-target/
-apps/desktop/src-tauri/target/
-apps/desktop/client-bundle/
-apps/desktop/src-tauri/bin/
 .env
 .env.*
 !.env.example

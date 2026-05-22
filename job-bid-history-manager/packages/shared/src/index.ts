@@ -77,8 +77,6 @@ export type CaptureJobPayload = {
   raw_payload_json?: string;
 };
 
-export const API_DEFAULT_BASE_URL = "http://127.0.0.1:5123";
-
 export const JOB_SORT_FIELDS = [
   "captured_at",
   "captured_by",

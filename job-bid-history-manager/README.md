@@ -1,124 +1,67 @@
 # Job Bid History Manager
 
-Local-first Windows desktop app for tracking job bid/application history with Chrome extension capture, FastAPI + SQLite backend, and Ollama extraction.
+Shared team job bid board: **Next.js + Supabase** web app and **Chrome extension** capture (`innerText` only). Groq extraction runs on the server (Vercel).
 
-## Monorepo layout
+## Monorepo
 
 ```
 job-bid-history-manager/
   apps/
-    desktop/     # Tauri v2 + React + TypeScript + ECharts
-    api/         # FastAPI + SQLite
+    web/         # Next.js dashboard + API routes
     extension/   # Chrome MV3 extension
   packages/
     shared/      # Shared TypeScript types
-  docs/screenshots/
+  docs/
+    PRE-DEPLOY.md
+    WEB-MIGRATION.md
 ```
-
-## Feature status (Phases 1–7)
-
-| Phase | Features |
-|-------|----------|
-| 1 | Monorepo, SQLite, mock capture, desktop table |
-| 2 | Chrome extension (`document.body.innerText` only) |
-| 3 | Tags, FTS search, filters, soft bulk delete |
-| 4 | Resume .docx upload, preview, download, unlink |
-| 5 | Ollama job extraction + JD re-extract (mock fallback) |
-| 6 | ECharts timeline, bucket controls, chart → table filter |
-| 7 | Inline edit, notes modal, README, screenshot placeholder |
 
 ## Prerequisites
 
 - **Node.js** 20+
-- **Python** 3.11+
-- **Ollama** (optional — falls back to heuristic mock if unavailable)
-- **Rust** (optional — for Tauri native window)
+- **Supabase** project (Postgres + Auth + Storage)
+- **Groq API key** (optional — mock extraction fallback)
 
 ## Quick start
 
 ```bash
-cd job-bid-history-manager
 npm install
-pip install -r apps/api/requirements.txt
-npm run build -w @jbhm/shared
 ```
 
-### API (port **5123**)
+1. Supabase: run `apps/web/supabase/migrations/001_jbhm_shared_team.sql` then `002_storage_resumes.sql`.
+2. Copy `apps/web/.env.example` → `apps/web/.env.local` and fill keys (see [docs/PRE-DEPLOY.md](docs/PRE-DEPLOY.md)).
+3. Run the app:
 
 ```bash
-npm run dev:api
+npm run dev
 ```
 
-- API: http://127.0.0.1:5123  
-- Health: http://127.0.0.1:5123/health  
-
-**Without Ollama** (heuristic extraction only):
-
-```bash
-# Windows
-set JBHM_USE_MOCK_EXTRACTION=true
-npm run dev:api
-```
-
-### Desktop UI
-
-```bash
-npm run dev:desktop
-```
-
-Open http://127.0.0.1:1420
-
-### Teammate client `.exe` (local proxy → host)
-
-See **[docs/CLIENT.md](docs/CLIENT.md)**. Build with `npm run build:client`. Teammates run one installer; host keeps `npm run dev:api:lan` while debugging.
+Open http://localhost:3000 → sign in → **Dashboard**. Extension setup: **Extension** in the header or `/dashboard/extension`.
 
 ### Chrome extension
 
 1. `chrome://extensions` → Developer mode → **Load unpacked** → `apps/extension`
-2. Set **Captured by** and API URL `http://127.0.0.1:5123`
-3. Capture job pages via popup or right-click menu
+2. **Web app URL** — e.g. `http://localhost:3000` (or your Vercel URL)
+3. **Capture token** — create on the Extension page in the dashboard
 
-### Team access on local network (LAN)
+## Scripts
 
-See **[docs/LAN.md](docs/LAN.md)** for full steps. Short version:
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Dev server (`apps/web`, port 3000) |
+| `npm run build:web` | Production build |
+| `npm run generate:icons` | Regenerate extension/web icons from `logo.png` |
 
-1. On the host PC: set `apps/desktop/.env` → `VITE_API_BASE_URL=http://YOUR_LAN_IP:5123`
-2. Run `npm run dev:api:lan` and `npm run dev:web:lan`
-3. Teammates open `http://YOUR_LAN_IP:1420` in a browser (allow firewall ports 5123 + 1420)
+## Deploy
 
-## API endpoints
+See [docs/PRE-DEPLOY.md](docs/PRE-DEPLOY.md) (Supabase env vars, Vercel `apps/web`, extension URL).
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Health + config |
-| POST | `/capture/job` | Capture + extract job |
-| GET | `/jobs` | List/search/filter jobs |
-| PATCH | `/jobs/{id}` | Update fields + notes |
-| DELETE | `/jobs/bulk` | Soft-delete jobs |
-| GET | `/jobs/{id}/jd` | JD raw/cleaned text |
-| POST | `/jobs/{id}/jd/reextract` | Re-run Ollama extraction |
-| POST | `/jobs/{id}/resume` | Upload/link .docx |
-| DELETE | `/jobs/{id}/resume` | Unlink resume |
-| GET | `/resumes/{id}/preview` | Extracted resume text |
-| GET | `/resumes/{id}/download` | Original .docx bytes |
-| GET/POST/PATCH/DELETE | `/tags` | Tag CRUD |
-| GET | `/analytics/timeline` | Bid counts by user/time bucket |
+## Data
 
-## Configuration
+**Production data** lives in **Supabase** (jobs, tags, resumes, capture tokens). There is no local SQLite in this repo anymore.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `JBHM_USE_MOCK_EXTRACTION` | `false` | Force heuristic extraction (no Ollama) |
-| `JBHM_OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama API |
-| `JBHM_OLLAMA_MODEL` | `llama3.2` | Model name |
-| `JBHM_PORT` | `5123` | API port (via uvicorn script) |
-| `VITE_API_BASE_URL` | `http://127.0.0.1:5123` | Desktop API URL |
-| (scripts) | | `dev:api:lan` / `dev:web:lan` — bind API and UI to LAN; see `docs/LAN.md` |
-
-## Screenshots
-
-Add UI captures under `docs/screenshots/` (placeholder included).
+If you still have rows in an old `apps/api/data/*.db` file from a previous install, export from SQLite manually or re-capture via the extension — there is no automatic migrator in-repo.
 
 ## License
 
-Private / local use.
+Private / team use.

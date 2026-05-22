@@ -7,7 +7,6 @@ import type {
   JobFilters,
   JobListItem,
   JobListResponse,
-  JobExtraction,
   Tag,
   TagCreate,
   TagPatch,
@@ -165,12 +164,6 @@ export async function patchJob(
 
 export async function fetchJobJd(jobId: string): Promise<JDContent> {
   return request<JDContent>(`/api/jobs/${jobId}/jd`);
-}
-
-export async function reextractJobJd(
-  jobId: string,
-): Promise<{ jd: JDContent; job_fields: JobExtraction }> {
-  return request(`/api/jobs/${jobId}/jd/reextract`, { method: "POST" });
 }
 
 export async function uploadJobResume(jobId: string, file: File): Promise<void> {
