@@ -1,64 +1,15 @@
 /**
- * Capture job posting as sanitized HTML (forms/nav stripped).
+ * Capture visible page text only (no HTML/CSS).
  */
-const SKIP_TAGS = new Set([
-  "script",
-  "style",
-  "nav",
-  "footer",
-  "header",
-  "form",
-  "button",
-  "input",
-  "select",
-  "textarea",
-  "noscript",
-  "svg",
-  "iframe",
-  "aside",
-]);
-
-function findMainRoot() {
-  const selectors = [
-    "main",
-    '[role="main"]',
-    "article",
-    '[class*="job-description" i]',
-    '[class*="jobDescription" i]',
-    '[id*="job-description" i]',
-    '[data-testid*="job" i]',
-    ".jobs-description",
-    ".job-view-layout",
-  ];
-  for (const sel of selectors) {
-    const el = document.querySelector(sel);
-    if (el && (el.innerText || "").trim().length > 200) return el;
-  }
-  return document.body;
-}
-
-function cloneAndSanitize(root) {
-  const clone = root.cloneNode(true);
-  const remove = clone.querySelectorAll([...SKIP_TAGS].join(","));
-  remove.forEach((el) => el.remove());
-  clone.querySelectorAll('[aria-hidden="true"]').forEach((el) => el.remove());
-  clone.querySelectorAll('[class*="cookie" i], [id*="cookie" i]').forEach((el) => el.remove());
-  clone.querySelectorAll('[class*="similar" i], [class*="recommended" i]').forEach((el) => el.remove());
-  return clone;
-}
+const MAX_CHARS = 200000;
 
 function capturePage() {
-  const root = findMainRoot();
-  const sanitized = cloneAndSanitize(root);
-  let captured_html = sanitized.innerHTML || "";
-  if (captured_html.length > 200000) {
-    captured_html = captured_html.slice(0, 200000);
-  }
+  const captured_text = (document.body?.innerText || "").trim().slice(0, MAX_CHARS);
   return {
-    captured_html,
+    captured_text,
     source_url: window.location.href,
     page_title: document.title || "",
-    capture_method: "sanitized-html",
+    capture_method: "document.body.innerText",
   };
 }
 
@@ -70,10 +21,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     sendResponse(capturePage());
   } catch (err) {
     sendResponse({
-      captured_html: document.body?.innerHTML?.slice(0, 200000) || "",
+      captured_text: "",
       source_url: window.location.href,
       page_title: document.title || "",
-      capture_method: "document.body.html-fallback",
+      capture_method: "document.body.innerText-fallback",
       error: String(err),
     });
   }

@@ -1,5 +1,6 @@
 const capturedByEl = document.getElementById("capturedBy");
 const apiBaseUrlEl = document.getElementById("apiBaseUrl");
+const captureTokenEl = document.getElementById("captureToken");
 const saveSettingsBtn = document.getElementById("saveSettings");
 const captureBtn = document.getElementById("captureBtn");
 const statusEl = document.getElementById("status");
@@ -11,26 +12,30 @@ function setStatus(message, type = "") {
 
 async function loadSettings() {
   const stored = await chrome.storage.sync.get({
-    apiBaseUrl: "http://127.0.0.1:5123",
+    apiBaseUrl: "http://localhost:3000",
     capturedBy: "",
+    captureToken: "",
   });
   capturedByEl.value = stored.capturedBy;
   apiBaseUrlEl.value = stored.apiBaseUrl;
+  captureTokenEl.value = stored.captureToken;
+}
+
+async function saveAll() {
+  await chrome.storage.sync.set({
+    capturedBy: capturedByEl.value.trim(),
+    apiBaseUrl: apiBaseUrlEl.value.trim() || "http://localhost:3000",
+    captureToken: captureTokenEl.value.trim(),
+  });
 }
 
 saveSettingsBtn.addEventListener("click", async () => {
-  await chrome.storage.sync.set({
-    capturedBy: capturedByEl.value.trim(),
-    apiBaseUrl: apiBaseUrlEl.value.trim() || "http://127.0.0.1:5123",
-  });
+  await saveAll();
   setStatus("Settings saved.", "ok");
 });
 
 captureBtn.addEventListener("click", async () => {
-  await chrome.storage.sync.set({
-    capturedBy: capturedByEl.value.trim(),
-    apiBaseUrl: apiBaseUrlEl.value.trim() || "http://127.0.0.1:5123",
-  });
+  await saveAll();
 
   captureBtn.disabled = true;
   setStatus("Capturing…", "");
@@ -45,7 +50,8 @@ captureBtn.addEventListener("click", async () => {
       setStatus(response?.error || "Capture failed.", "err");
       return;
     }
-    setStatus(`Saved job ${response.result?.job_id?.slice(0, 8) ?? ""}…`, "ok");
+    const id = response.result?.job_id ?? "";
+    setStatus(`Saved${id ? ` · ${id.slice(0, 8)}…` : ""}`, "ok");
   });
 });
 

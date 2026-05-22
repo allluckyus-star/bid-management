@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Job Bid History Capture",
-  "version": "0.3.3",
-  "description": "Capture structured job posting (DOM + HTML) and send to Job Bid History Manager API.",
+  "version": "0.4.0",
+  "description": "Capture visible job page text (innerText) and send to Job Bid History web API.",
   "permissions": ["storage", "activeTab", "scripting", "contextMenus", "notifications"],
   "host_permissions": [
-    "http://127.0.0.1:5123/*",
-    "http://localhost:5123/*",
+    "http://localhost:3000/*",
+    "http://127.0.0.1:3000/*",
+    "https://*/*",
     "http://*/*"
   ],
   "action": {

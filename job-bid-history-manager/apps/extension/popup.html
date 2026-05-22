@@ -10,7 +10,7 @@
     <header class="popup-header">
       <img src="icons/icon48.png" alt="" width="32" height="32" class="popup-logo" />
       <h1>Job Bid Capture</h1>
-      <p class="subtitle">Visible text only · no HTML</p>
+      <p class="subtitle">Visible text only · sent to your web app</p>
     </header>
 
     <label>
@@ -19,8 +19,18 @@
     </label>
 
     <label>
-      <span>API base URL</span>
-      <input id="apiBaseUrl" type="url" placeholder="http://127.0.0.1:5123" />
+      <span>Web app URL</span>
+      <input id="apiBaseUrl" type="url" placeholder="http://localhost:3000" />
+    </label>
+
+    <label>
+      <span>Capture token</span>
+      <input
+        id="captureToken"
+        type="password"
+        placeholder="jbhm_… from dashboard"
+        autocomplete="off"
+      />
     </label>
 
     <button id="saveSettings" type="button" class="secondary">Save settings</button>
@@ -29,7 +39,7 @@
     <p id="status" class="status" role="status"></p>
 
     <footer>
-      <small>Right-click any page → “Capture job to Bid History”</small>
+      <small>Create token: Dashboard → Chrome extension · Right-click page to capture</small>
     </footer>
     <script src="popup.js"></script>
   </body>

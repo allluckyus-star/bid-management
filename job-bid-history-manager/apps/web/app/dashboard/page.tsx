@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { ExtensionTokensPanel } from "@/components/extension-tokens-panel";
 import { JobsTablePreview } from "@/components/jobs-table-preview";
 import { listJobs } from "@/lib/jobs/list-jobs";
 import { createClient } from "@/lib/supabase/server";
@@ -27,10 +28,11 @@ export default async function DashboardPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Bid history</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Shared team board — all signed-in users see the same jobs. Phase 1:
-          list from Supabase; capture and full table UI come next.
+          Shared team board — all signed-in users see the same jobs.
         </p>
       </div>
+
+      <ExtensionTokensPanel />
 
       {loadError ? (
         <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm">

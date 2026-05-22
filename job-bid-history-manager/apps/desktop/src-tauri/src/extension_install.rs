@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const EXTENSION_DIR_NAME: &str = "chrome-extension";
-const EXTENSION_VERSION: &str = "0.3.3";
+const EXTENSION_VERSION: &str = "0.4.0";
 
 const MANIFEST_JSON: &str = include_str!("../../../extension/manifest.json");
 const BACKGROUND_JS: &str = include_str!("../../../extension/background.js");

@@ -9,7 +9,7 @@ export function JobsTablePreview({ items, total }: Props) {
   if (items.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        No jobs yet. Phase 2 will add Chrome extension capture to this shared board.
+        No jobs yet. Use the Chrome extension (capture token above) to add bids.
       </p>
     );
   }

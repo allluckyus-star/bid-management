@@ -20,7 +20,7 @@
 | Phase | Status |
 |-------|--------|
 | 1 — Supabase schema + auth + jobs list | **In progress** (`apps/web`) |
-| 2 — Extension capture + tokens | Not started |
+| 2 — Extension capture + tokens | **Done** (mock extraction) |
 | 3 — Groq extraction | Not started |
 | 4 — Full table edit/tags/notes | Not started |
 | 5 — Resumes (Storage) | Not started |

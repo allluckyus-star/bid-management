@@ -1,27 +1,21 @@
-# Job Bid History — Chrome Extension (MV3)
+# Chrome extension (v0.4.0)
 
-Captures **visible page text only** via `document.body.innerText` and sends it to the local FastAPI backend.
+Captures **`document.body.innerText` only** (no HTML) and POSTs to the web app:
 
-## Install (unpacked)
+`POST {apiBaseUrl}/api/capture/job`  
+Header: `Authorization: Bearer jbhm_…`
 
-1. Start the API: `npm run dev:api` from monorepo root.
-2. Open Chrome → `chrome://extensions`
-3. Enable **Developer mode**
-4. **Load unpacked** → select this folder: `apps/extension`
-5. Open the extension popup:
-   - Set **Captured by** (your name)
-   - Set **API base URL** (default `http://127.0.0.1:5123`)
-   - Click **Save settings**
+## Setup
 
-## Capture a job
+1. Run the web app (`npm run dev:web`) or use your Vercel URL.
+2. Sign in → Dashboard → **Create capture token** (copy once).
+3. Extension popup:
+   - **Web app URL** — e.g. `http://localhost:3000`
+   - **Capture token** — paste from dashboard
+   - **Captured by** — display name on the shared board
+4. Load unpacked extension from this folder in `chrome://extensions` (Reload after updates).
 
-- Open a job posting page
-- Click extension icon → **Capture this page**, or
-- Right-click → **Capture job to Bid History**
+## Capture
 
-Success/failure appears in the popup status line and Chrome notifications.
-
-## Security
-
-- Does not send HTML, CSS, JavaScript, or `outerHTML`
-- Only plain text from `document.body.innerText`
+- Toolbar button or right-click → **Capture job to Bid History**
+- Requires ~80+ characters of visible text on the page
