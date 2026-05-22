@@ -1,8 +1,9 @@
+import type { JobExtraction } from "@jbhm/shared";
 import { groqExtractJobData } from "@/lib/extraction/groq";
-import { mockExtractJobData, type MockExtraction } from "@/lib/extraction/mock-extract";
+import { mockExtractJobData } from "@/lib/extraction/mock-extract";
 
 export type ExtractOutcome = {
-  extraction: MockExtraction;
+  extraction: JobExtraction;
   modelName: string;
   partial: boolean;
 };

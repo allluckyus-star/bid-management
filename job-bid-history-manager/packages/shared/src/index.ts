@@ -1,3 +1,22 @@
+export type SalaryPeriod = "hourly" | "monthly" | "annual";
+
+export type EmploymentType = "full-time" | "part-time" | "contract" | "internship";
+
+export type WorkplaceType = "remote" | "hybrid" | "onsite";
+
+/** Normalized employment/workplace tags attached on capture. */
+export const CAPTURE_TAG_NAMES = [
+  "full-time",
+  "part-time",
+  "contract",
+  "internship",
+  "remote",
+  "hybrid",
+  "onsite",
+] as const;
+
+export type CaptureTagName = (typeof CAPTURE_TAG_NAMES)[number];
+
 export type JobExtraction = {
   company_name: string;
   job_title: string;
@@ -6,8 +25,10 @@ export type JobExtraction = {
   salary_min: number | null;
   salary_max: number | null;
   salary_currency: string;
-  employment_type: string;
-  seniority: string;
+  salary_period: SalaryPeriod | null;
+  employment_type: EmploymentType | null;
+  workplace_type: WorkplaceType | null;
+  tag_names: string[];
   required_skills: string[];
   nice_to_have_skills: string[];
   cleaned_job_description: string;

@@ -4,7 +4,7 @@ import { jsonWithCors, optionsResponse } from "@/lib/http/cors";
 import { saveCapturedJob } from "@/lib/jobs/save-capture";
 import { createAdminClient, hasServiceRoleKey } from "@/lib/supabase/admin";
 
-const PROMPT_VERSION = "phase3-groq-innertext";
+const PROMPT_VERSION = "phase4-salary-jd-tags";
 
 type CaptureBody = {
   captured_text?: string;

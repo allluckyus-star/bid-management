@@ -1,15 +1,12 @@
-export type MockExtraction = {
-  company_name: string;
-  job_title: string;
-  location: string;
-  salary_text: string;
-  salary_min: number | null;
-  salary_max: number | null;
-  salary_currency: string;
-  salary_period: string | null;
-  cleaned_job_description: string;
-  confidence: number;
-};
+import type { JobExtraction } from "@jbhm/shared";
+import {
+  detectEmploymentFromText,
+  detectWorkplaceFromText,
+  normalizeExtraction,
+  parseSalaryAmounts,
+} from "@/lib/extraction/normalize";
+
+export type { JobExtraction };
 
 const NOISE =
   /^(?:share|save|apply now|easy apply|report job|sign in|log in|linkedin|indeed|glassdoor|©)/i;
@@ -17,8 +14,11 @@ const NOISE =
 const INVALID_COMPANY =
   /^(?:apply|apply now|search|menu|home|skip to main content|submit)$/i;
 
-const SALARY_RE =
-  /(?:\$\s*[\d]{1,3}(?:,\d{3})+|\$\s*[\d]+|\$\s*[\d]+\s*k\b|\d+k\s*-\s*\d+k)/i;
+const COMPENSATION_LINE_RE =
+  /\b(?:salary|compensation|pay range|base pay|base salary|hourly|\/hr|per year|annual|pay band)\b/i;
+
+const SALARY_AMOUNT_RE =
+  /\$\s*[\d]{1,3}(?:,\d{3})+|\$\s*[\d]+|\$\s*[\d]+\s*k\b|\d+k\s*-\s*\d+k/i;
 
 function titleFromPageTitle(pageTitle: string): { title: string; company: string } {
   const parts = pageTitle.split(/\s*[|\-–—]\s*/).map((p) => p.trim()).filter(Boolean);
@@ -37,48 +37,23 @@ function inferCompany(text: string): string {
   return "";
 }
 
-function parseSalaryAmounts(text: string): { min: number | null; max: number | null } {
-  const nums: number[] = [];
-  for (const m of text.matchAll(/\$\s*([\d,]+)\s*(K)?/gi)) {
-    const raw = m[1].replace(/,/g, "");
-    const v =
-      (m[2] || "").toLowerCase() === "k" ? Math.round(parseFloat(raw) * 1000) : parseInt(raw, 10);
-    if (!Number.isNaN(v)) nums.push(v);
-  }
-  if (!nums.length) return { min: null, max: null };
-  return { min: Math.min(...nums), max: Math.max(...nums) };
-}
-
-function detectPeriod(text: string): string | null {
+function detectPeriod(text: string): "hourly" | "monthly" | "annual" | null {
   if (/\b(?:\/hr|per\s+hour|hourly)\b/i.test(text)) return "hourly";
-  if (/\b(?:\/yr|per\s+year|annual|yearly)\b/i.test(text)) return "annual";
+  if (/\b(?:\/yr|per\s+year|annual|yearly|base\s+salary)\b/i.test(text)) return "annual";
   if (/\b(?:per\s+month|monthly)\b/i.test(text)) return "monthly";
   return null;
 }
 
-function fallbackCleanJd(lines: string[]): string {
-  const keep: string[] = [];
-  const section = /responsibilit|requirement|qualification|about (?:the )?(?:role|job)|benefits|skills/i;
-  for (const line of lines) {
-    const t = line.trim();
-    if (!t || t.length < 3 || NOISE.test(t)) continue;
-    if (section.test(t) || keep.length > 0 || t.length > 40) {
-      keep.push(t);
-    }
-  }
-  return keep.slice(0, 200).join("\n\n").slice(0, 12000);
-}
-
-/** Phase 2 heuristic extraction from innerText only. */
+/** Phase 2 heuristic extraction from innerText only; normalized through shared pipeline. */
 export function mockExtractJobData(
   capturedText: string,
   pageTitle: string,
   _sourceUrl: string,
-): MockExtraction {
+): JobExtraction {
   const lines = capturedText
-    .split(/\n+/)
-    .map((l) => l.trim())
-    .filter((l) => l.length > 1);
+    .split(/\r?\n/)
+    .map((l) => l.trimEnd())
+    .filter((l) => l.trim().length > 1);
 
   const { title: titleFromPt, company: companyFromPt } = titleFromPageTitle(pageTitle);
   let jobTitle = titleFromPt;
@@ -91,15 +66,22 @@ export function mockExtractJobData(
   let location = "";
   let salaryText = "";
   for (const line of lines) {
+    const trimmed = line.trim();
     if (
       !location &&
-      /\b(remote|hybrid|on-?site)\b/i.test(line) &&
-      line.length < 200
+      /\b(remote|hybrid|on-?site|in office)\b/i.test(trimmed) &&
+      trimmed.length < 200
     ) {
-      location = line.slice(0, 200);
+      location = trimmed.slice(0, 200);
     }
-    if (!salaryText && SALARY_RE.test(line) && line.length < 280) {
-      salaryText = line.slice(0, 240);
+    if (
+      !salaryText &&
+      COMPENSATION_LINE_RE.test(trimmed) &&
+      SALARY_AMOUNT_RE.test(trimmed) &&
+      trimmed.length < 280 &&
+      !/\bfunding\b|\bvaluation\b|\bseries\s+[a-d]\b/i.test(trimmed)
+    ) {
+      salaryText = trimmed.slice(0, 240);
     }
   }
 
@@ -110,7 +92,7 @@ export function mockExtractJobData(
           line,
         )
       ) {
-        jobTitle = line.slice(0, 200);
+        jobTitle = line.trim().slice(0, 200);
         break;
       }
     }
@@ -118,17 +100,29 @@ export function mockExtractJobData(
 
   const { min, max } = parseSalaryAmounts(salaryText);
   const period = detectPeriod(salaryText);
+  const employment = detectEmploymentFromText(capturedText);
+  const workplace = detectWorkplaceFromText(capturedText);
 
-  return {
-    company_name: company,
-    job_title: jobTitle,
-    location,
-    salary_text: salaryText,
-    salary_min: min,
-    salary_max: max,
-    salary_currency: "USD",
-    salary_period: period,
-    cleaned_job_description: fallbackCleanJd(lines),
-    confidence: 0.35,
-  };
+  return normalizeExtraction(
+    {
+      company_name: company,
+      job_title: jobTitle,
+      location,
+      salary_text: salaryText,
+      salary_min: min,
+      salary_max: max,
+      salary_currency: "USD",
+      salary_period: period,
+      employment_type: employment,
+      workplace_type: workplace,
+      tag_names: [],
+      required_skills: [],
+      nice_to_have_skills: [],
+      cleaned_job_description: "",
+      hiring_contact: null,
+      confidence: 0.35,
+    },
+    capturedText,
+    pageTitle,
+  );
 }
