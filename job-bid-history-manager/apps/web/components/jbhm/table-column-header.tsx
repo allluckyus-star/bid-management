@@ -1,7 +1,7 @@
 import type { JobFilterableField, JobOrderableField, JobSortField } from "@jbhm/shared";
 import { ArrowDown, ArrowDownUp, ArrowUp, Filter, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { COLUMN_CONTROLS, COLUMN_LABELS } from "@/lib/column-controls";
+import { COLUMN_CONTROLS, COLUMN_LABELS } from "@/lib/jbhm/column-controls";
 
 type Props = {
   field?: JobSortField;

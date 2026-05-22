@@ -1,7 +1,7 @@
 import type { JobListItem } from "@jbhm/shared";
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { resumeDownloadUrl, unlinkJobResume, uploadJobResume } from "@/lib/api";
+import { resumeDownloadUrl, unlinkJobResume, uploadJobResume } from "@/lib/api/client";
 import { truncate } from "@/lib/utils";
 
 type Props = {

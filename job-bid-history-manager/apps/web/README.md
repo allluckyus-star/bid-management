@@ -24,11 +24,20 @@ Next.js App Router + Supabase (shared team board). Replaces Tauri/gateway/LAN fo
 - [x] Auth (email/password from starter)
 - [x] Dashboard + jobs list from Supabase
 
-## Phase 2 (current)
+## Phase 2
 
-- [x] `POST /api/capture/job` — Bearer capture token, innerText payload, mock extraction
+- [x] `POST /api/capture/job` — Bearer capture token, innerText payload
 - [x] `GET/POST /api/extension-tokens` — create/revoke tokens (dashboard)
 - [x] Chrome extension v0.4.0 — innerText → `/api/capture/job`
+
+## Phases 3–6 (pre-deploy)
+
+- [x] Groq extraction (`GROQ_API_KEY`) with mock fallback
+- [x] Full dashboard UI (table, filters, bulk delete, tags, notes, JD, resumes)
+- [x] Timeline chart (`/api/analytics/timeline`)
+- [x] Storage migration `002_storage_resumes.sql`
+
+Deploy: see [docs/PRE-DEPLOY.md](../../docs/PRE-DEPLOY.md).
 
 ## Setup
 
@@ -55,10 +64,9 @@ Next.js App Router + Supabase (shared team board). Replaces Tauri/gateway/LAN fo
 - `npm run dev:web` — Next dev server (port 3000)
 - `npm run build:web` — production build
 
-## Next phases
+## Next
 
-- **Phase 3:** Groq extraction in Route Handlers (replace mock-heuristic)
-- **Phase 4–6:** Full table UX, resumes, timeline chart
-- **Phase 7:** Deploy to Vercel
+- Deploy to Vercel (`vercel.json` included)
+- Point Chrome extension at production URL
 
-Legacy stack (`apps/api`, `apps/desktop`, gateway) stays for reference until parity.
+Legacy stack (`apps/api`, `apps/desktop`, gateway) is deprecated for production.

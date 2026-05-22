@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useTableInteraction } from "@/context/table-interaction";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { addTagToJob, removeTagFromJob } from "@/lib/api";
+import { addTagToJob, removeTagFromJob } from "@/lib/api/client";
 
 const LOCATION_TAGS = new Set(["remote", "onsite", "hybrid"]);
 const EMPLOYMENT_TAGS = new Set(["full-time", "part-time"]);

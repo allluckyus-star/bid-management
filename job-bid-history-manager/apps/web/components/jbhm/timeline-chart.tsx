@@ -2,13 +2,13 @@ import type { TimelineBucketKey } from "@jbhm/shared";
 import ReactECharts from "echarts-for-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { fetchTimeline } from "@/lib/api";
+import { fetchTimeline } from "@/lib/api/client";
 import {
   colorForUser,
   sortedUserNames,
   userColorMap,
   userMarkerHtml,
-} from "@/lib/user-colors";
+} from "@/lib/jbhm/user-colors";
 import {
   canPanNewer,
   canPanOlder,
@@ -19,7 +19,7 @@ import {
   zoomPreservingVisibleRange,
   type HistoryBounds,
   type ZoomRange,
-} from "@/lib/timeline-window";
+} from "@/lib/jbhm/timeline-window";
 
 const BUCKETS: { key: TimelineBucketKey; label: string }[] = [
   { key: "1h", label: "Hour" },

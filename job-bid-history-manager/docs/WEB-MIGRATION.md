@@ -19,13 +19,13 @@
 
 | Phase | Status |
 |-------|--------|
-| 1 — Supabase schema + auth + jobs list | **In progress** (`apps/web`) |
-| 2 — Extension capture + tokens | **Done** (mock extraction) |
-| 3 — Groq extraction | Not started |
-| 4 — Full table edit/tags/notes | Not started |
-| 5 — Resumes (Storage) | Not started |
-| 6 — Timeline chart | Not started |
-| 7 — Vercel deploy | Not started |
+| 1 — Supabase schema + auth + jobs list | **Done** |
+| 2 — Extension capture + tokens | **Done** |
+| 3 — Groq extraction | **Done** (fallback mock) |
+| 4 — Full table edit/tags/notes | **Done** (dashboard UI) |
+| 5 — Resumes (Storage) | **Done** (needs `002_storage_resumes.sql`) |
+| 6 — Timeline chart | **Done** |
+| 7 — Vercel deploy | **Ready** — see `docs/PRE-DEPLOY.md` |
 
 ## Deprecate (after parity)
 

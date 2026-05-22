@@ -18,15 +18,15 @@ import type {
 import { AnimatePresence, motion } from "framer-motion";
 import { ExternalLink } from "lucide-react";
 import { useMemo, useState } from "react";
-import { ColumnSearchDialog } from "@/components/column-search-dialog";
-import { ColumnValueFilterDialog } from "@/components/column-value-filter-dialog";
-import { EditableCell } from "@/components/editable-cell";
-import { JdCell } from "@/components/jd-cell";
-import { NotesCell } from "@/components/notes-cell";
-import { ResumeCell } from "@/components/resume-cell";
-import { TextPreviewDialog } from "@/components/text-preview-dialog";
-import { TableColumnHeader } from "@/components/table-column-header";
-import { TagCell } from "@/components/tag-cell";
+import { ColumnSearchDialog } from "@/components/jbhm/column-search-dialog";
+import { ColumnValueFilterDialog } from "@/components/jbhm/column-value-filter-dialog";
+import { EditableCell } from "@/components/jbhm/editable-cell";
+import { JdCell } from "@/components/jbhm/jd-cell";
+import { NotesCell } from "@/components/jbhm/notes-cell";
+import { ResumeCell } from "@/components/jbhm/resume-cell";
+import { TextPreviewDialog } from "@/components/jbhm/text-preview-dialog";
+import { TableColumnHeader } from "@/components/jbhm/table-column-header";
+import { TagCell } from "@/components/jbhm/tag-cell";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -38,13 +38,13 @@ import {
 } from "@/components/ui/dialog";
 import { TableInteractionContext } from "@/context/table-interaction";
 import { useHoldKey } from "@/hooks/use-interaction-hold";
-import { fetchJobJd, fetchResumePreview, patchJob, reextractJobJd } from "@/lib/api";
+import { fetchJobJd, fetchResumePreview, patchJob, reextractJobJd } from "@/lib/api/client";
 import {
   COLUMN_CONTROLS,
   cycleColumnSort,
   isFilterableField,
   isOrderableField,
-} from "@/lib/column-controls";
+} from "@/lib/jbhm/column-controls";
 import { cn, formatDate } from "@/lib/utils";
 
 type Props = {

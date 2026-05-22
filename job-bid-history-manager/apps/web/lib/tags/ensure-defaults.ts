@@ -20,9 +20,8 @@ export async function ensureDefaultTags(supabase: SupabaseClient, userId: string
   }
 
   const { data: all } = await supabase.from("tags").select("id, name");
-  const stale = (all ?? []).filter(
-    (t) => !ALLOWED_TAG_NAMES.includes(t.name.toLowerCase() as (typeof ALLOWED_TAG_NAMES)[number]),
-  );
+  const allowed = new Set(ALLOWED_TAG_NAMES);
+  const stale = (all ?? []).filter((t) => !allowed.has(t.name.toLowerCase()));
   for (const tag of stale) {
     await supabase.from("job_tags").delete().eq("tag_id", tag.id);
     await supabase.from("tags").delete().eq("id", tag.id);

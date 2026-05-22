@@ -9,8 +9,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { fetchColumnValues } from "@/lib/api";
-import { COLUMN_LABELS } from "@/lib/column-controls";
+import { fetchColumnValues } from "@/lib/api/client";
+import { COLUMN_LABELS } from "@/lib/jbhm/column-controls";
 
 type Props = {
   open: boolean;

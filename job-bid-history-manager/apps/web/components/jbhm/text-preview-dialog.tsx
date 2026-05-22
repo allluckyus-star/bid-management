@@ -4,7 +4,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { sanitizeDisplayText } from "@/lib/sanitize";
+import { sanitizeDisplayText } from "@/lib/jbhm/sanitize";
 
 type Props = {
   open: boolean;

@@ -9,7 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { COLUMN_LABELS } from "@/lib/column-controls";
+import { COLUMN_LABELS } from "@/lib/jbhm/column-controls";
 
 type Props = {
   open: boolean;

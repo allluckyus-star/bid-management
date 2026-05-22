@@ -100,14 +100,11 @@ export async function listJobsFromFilters(
   let jobIdFilter: string[] | null = null;
 
   if (filters.tags?.length) {
-    const { data: tagRows } = await supabase
-      .from("tags")
-      .select("id, name")
-      .in(
-        "name",
-        filters.tags.map((t) => t.toLowerCase()),
-      );
-    const tagIds = (tagRows ?? []).map((t) => t.id);
+    const tagNames = filters.tags.map((t) => t.toLowerCase());
+    const { data: tagRows } = await supabase.from("tags").select("id, name");
+    const tagIds = (tagRows ?? [])
+      .filter((t) => tagNames.includes(t.name.toLowerCase()))
+      .map((t) => t.id);
     if (!tagIds.length) {
       return { items: [], total: 0, page, page_size: pageSize };
     }
