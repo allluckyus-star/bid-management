@@ -776,7 +776,7 @@ export function TimelineChart({
   }, [bucket]);
 
   useEffect(() => {
-    if (!data) return;
+    if (!data?.series.length) return;
     syncZoomFromData(data, bucket, { resetView: pendingResetRef.current });
     pendingResetRef.current = false;
   }, [data, bucket, syncZoomFromData]);
@@ -794,7 +794,11 @@ export function TimelineChart({
   }, [chartKey, loading, setupChartWheel]);
 
   const option = useMemo(() => {
-    if (!data?.series.length) {
+    if (!data) {
+      return {};
+    }
+
+    if (!data.series.length) {
       return {
         title: {
           text: "No bids recorded yet",
@@ -1072,7 +1076,16 @@ export function TimelineChart({
               size="sm"
               variant={bucket === b.key ? "default" : "outline"}
               className="h-7 text-xs"
-              onClick={() => setBucket(b.key)}
+              onClick={() => {
+                if (b.key === bucket) {
+                  pendingResetRef.current = true;
+                  onRequestRange(
+                    b.key,
+                    initialRange(b.key, historyBoundsRef.current),
+                  );
+                }
+                setBucket(b.key);
+              }}
             >
               {b.label}
             </Button>
@@ -1088,7 +1101,7 @@ export function TimelineChart({
               Retry chart
             </Button>
           </div>
-        ) : loading && !data ? (
+        ) : loading || !data ? (
           <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">
             Loading chart…
           </div>
