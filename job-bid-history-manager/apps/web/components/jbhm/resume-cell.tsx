@@ -2,6 +2,7 @@ import type { JobListItem } from "@jbhm/shared";
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { resumeDownloadUrl, unlinkJobResume, uploadJobResume } from "@/lib/api/client";
+import { notifyActionSuccess, notifyLoadError } from "@/lib/jbhm/notify";
 import { truncate } from "@/lib/utils";
 
 type Props = {
@@ -19,14 +20,15 @@ export function ResumeCell({ job, busy, onUpdated, onPreview }: Props) {
   const handleFile = async (file: File | undefined) => {
     if (!file) return;
     if (!file.name.toLowerCase().endsWith(".docx")) {
-      alert("Only .docx files are allowed.");
+      notifyLoadError("Only .docx files are allowed.");
       return;
     }
     try {
       await uploadJobResume(job.id, file);
+      notifyActionSuccess("Resume uploaded");
       onUpdated();
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Upload failed");
+      notifyLoadError(e instanceof Error ? e.message : "Upload failed");
     } finally {
       if (inputRef.current) inputRef.current.value = "";
     }
@@ -36,9 +38,10 @@ export function ResumeCell({ job, busy, onUpdated, onPreview }: Props) {
     if (!confirm("Unlink resume from this job?")) return;
     try {
       await unlinkJobResume(job.id);
+      notifyActionSuccess("Resume unlinked");
       onUpdated();
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Unlink failed");
+      notifyLoadError(e instanceof Error ? e.message : "Unlink failed");
     }
   };
 

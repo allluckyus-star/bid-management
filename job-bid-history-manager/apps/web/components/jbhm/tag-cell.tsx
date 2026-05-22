@@ -5,6 +5,7 @@ import { useTableInteraction } from "@/context/table-interaction";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { addTagToJob, removeTagFromJob } from "@/lib/api/client";
+import { notifyActionSuccess, notifyLoadError } from "@/lib/jbhm/notify";
 
 const LOCATION_TAGS = new Set(["remote", "onsite", "hybrid"]);
 const EMPLOYMENT_TAGS = new Set(["full-time", "part-time"]);
@@ -33,8 +34,11 @@ export function TagCell({ job, allTags, holdKey, onUpdated }: Props) {
     setBusy(true);
     try {
       await addTagToJob(job.id, tagId);
+      notifyActionSuccess("Tag added");
       onUpdated();
       setOpen(false);
+    } catch (e) {
+      notifyLoadError(e instanceof Error ? e.message : "Could not add tag");
     } finally {
       setBusy(false);
     }
@@ -44,7 +48,10 @@ export function TagCell({ job, allTags, holdKey, onUpdated }: Props) {
     setBusy(true);
     try {
       await removeTagFromJob(job.id, tagId);
+      notifyActionSuccess("Tag removed");
       onUpdated();
+    } catch (e) {
+      notifyLoadError(e instanceof Error ? e.message : "Could not remove tag");
     } finally {
       setBusy(false);
     }

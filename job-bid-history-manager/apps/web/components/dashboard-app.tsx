@@ -25,6 +25,7 @@ import { TablePagination } from "@/components/jbhm/table-pagination";
 import { TagManagerDialog } from "@/components/jbhm/tag-manager-dialog";
 import { TimelineChart } from "@/components/jbhm/timeline-chart";
 import { Button } from "@/components/ui/button";
+import { Toaster } from "@/components/ui/sonner";
 import {
   bulkDeleteJobs,
   fetchCapturedByUsers,
@@ -32,6 +33,12 @@ import {
   fetchJobs,
   fetchTags,
 } from "@/lib/api/client";
+import {
+  notifyActionSuccess,
+  notifyAfterLoad,
+  notifyLoadError,
+  type LoadReason,
+} from "@/lib/jbhm/notify";
 
 const DATA_POLL_INTERVAL_MS = 20_000;
 
@@ -68,6 +75,11 @@ export function DashboardApp() {
     isHeld: isInteractionHeld,
   } = useInteractionHold();
   const loadRef = useRef<typeof load | null>(null);
+  const boardTotalRef = useRef<number | null>(null);
+  const notifyMetaRef = useRef<{ cleared?: boolean }>({});
+  const filterKeyRef = useRef<string>("");
+  const pageKeyRef = useRef<string>("");
+  const isFirstLoadRef = useRef(true);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -128,9 +140,19 @@ export function DashboardApp() {
     setFilters((prev) => ({ ...prev, sort, page: 1 }));
   };
 
+  const filterKey = useMemo(
+    () => JSON.stringify({ listContext, sort: filters.sort }),
+    [listContext, filters.sort],
+  );
+  const pageKey = useMemo(
+    () => `${filters.page ?? 1}-${filters.page_size ?? 10}`,
+    [filters.page, filters.page_size],
+  );
+
   const load = useCallback(
-    async (options?: { silent?: boolean }) => {
+    async (options?: { silent?: boolean; reason?: LoadReason }) => {
       const silent = options?.silent ?? false;
+      const reason = options?.reason ?? "filter";
       if (silent && isInteractionHeld()) {
         queueSilentRefresh();
         return;
@@ -146,6 +168,9 @@ export function DashboardApp() {
           fetchTags(),
           fetchCapturedByUsers(),
         ]);
+        const prevBoardTotal = boardTotalRef.current;
+        boardTotalRef.current = dashboard.total_bids;
+
         setJobs(jobsRes.items);
         setTotal(jobsRes.total);
         setSummary(dashboard);
@@ -154,9 +179,28 @@ export function DashboardApp() {
         if (!silent) setRowSelection({});
         if (silent) setError(null);
         setRefreshTick((t) => t + 1);
+
+        const newBoardBids =
+          reason === "poll" &&
+          prevBoardTotal != null &&
+          dashboard.total_bids > prevBoardTotal
+            ? dashboard.total_bids - prevBoardTotal
+            : 0;
+
+        notifyAfterLoad({
+          reason,
+          filters,
+          total: jobsRes.total,
+          page: filters.page ?? 1,
+          newBoardBids,
+          cleared: notifyMetaRef.current.cleared,
+        });
+        notifyMetaRef.current = {};
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Failed to load data";
         setError(msg);
+        notifyLoadError(msg);
+        notifyMetaRef.current = {};
         if (!silent) {
           setJobs([]);
           setTotal(0);
@@ -166,28 +210,42 @@ export function DashboardApp() {
         if (!silent) setLoading(false);
       }
     },
-    [apiFilters, isInteractionHeld, queueSilentRefresh],
+    [apiFilters, filters, isInteractionHeld, queueSilentRefresh],
   );
 
   loadRef.current = load;
 
   const refreshJobsTable = useCallback(() => {
-    void load({ silent: true });
+    void load({ silent: true, reason: "save" });
   }, [load]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    let reason: LoadReason = "filter";
+    if (isFirstLoadRef.current) {
+      reason = "initial";
+      isFirstLoadRef.current = false;
+    } else if (filterKey !== filterKeyRef.current) {
+      reason = "filter";
+    } else if (pageKey !== pageKeyRef.current) {
+      reason = "page";
+    }
+    filterKeyRef.current = filterKey;
+    pageKeyRef.current = pageKey;
+    void loadRef.current?.({ silent: false, reason });
+  }, [filterKey, pageKey]);
 
   useEffect(() => {
-    const id = window.setInterval(() => void load({ silent: true }), DATA_POLL_INTERVAL_MS);
+    const id = window.setInterval(
+      () => void loadRef.current?.({ silent: true, reason: "poll" }),
+      DATA_POLL_INTERVAL_MS,
+    );
     return () => window.clearInterval(id);
-  }, [load]);
+  }, []);
 
   useEffect(() => {
     if (interactionHeld) return;
     if (!consumePendingSilent()) return;
-    void loadRef.current?.({ silent: true });
+    void loadRef.current?.({ silent: true, reason: "poll" });
   }, [interactionHeld, consumePendingSilent]);
 
   const selectedIds = Object.keys(rowSelection).filter((id) => rowSelection[id]);
@@ -198,9 +256,14 @@ export function DashboardApp() {
     setDeleting(true);
     try {
       await bulkDeleteJobs(selectedIds);
-      await load();
+      notifyActionSuccess(
+        `Deleted ${selectedIds.length} job${selectedIds.length === 1 ? "" : "s"}`,
+      );
+      await load({ silent: true, reason: "save" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Bulk delete failed");
+      const msg = err instanceof Error ? err.message : "Bulk delete failed";
+      setError(msg);
+      notifyLoadError(msg);
     } finally {
       setDeleting(false);
     }
@@ -221,7 +284,12 @@ export function DashboardApp() {
                 Extension
               </Link>
             </Button>
-            <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void load({ reason: "manual" })}
+              disabled={loading}
+            >
               <RefreshCw className={`mr-1 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               Refresh
             </Button>
@@ -276,7 +344,10 @@ export function DashboardApp() {
               })
             }
             onSearch={() => setFilters((prev) => ({ ...prev, page: 1 }))}
-            onClear={() => setFilters(emptyFilters)}
+            onClear={() => {
+              notifyMetaRef.current = { cleared: true };
+              setFilters(emptyFilters);
+            }}
           />
 
           <TimelineChart dark={dark} refreshToken={refreshTick} fetchEnabled />
@@ -326,6 +397,7 @@ export function DashboardApp() {
           />
         </section>
       </main>
+      <Toaster theme={dark ? "dark" : "light"} position="bottom-right" richColors closeButton />
     </div>
   );
 }

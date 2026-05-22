@@ -39,6 +39,7 @@ import {
 import { TableInteractionContext } from "@/context/table-interaction";
 import { useHoldKey } from "@/hooks/use-interaction-hold";
 import { fetchJobJd, fetchResumePreview, patchJob } from "@/lib/api/client";
+import { notifyActionSuccess, notifyLoadError } from "@/lib/jbhm/notify";
 import {
   COLUMN_CONTROLS,
   cycleColumnSort,
@@ -102,6 +103,14 @@ export function JobsTable({
   useHoldKey(setInteractionHold, "notes-dialog", !!notesDialog);
   useHoldKey(setInteractionHold, "resume-dialog", !!resumeDialog);
 
+  const saveField = (jobId: string, patch: Parameters<typeof patchJob>[1]) =>
+    patchJob(jobId, patch)
+      .then(() => {
+        notifyActionSuccess("Saved");
+        onRefresh();
+      })
+      .catch((e) => notifyLoadError(e instanceof Error ? e.message : "Save failed"));
+
   const openJd = async (job: JobListItem) => {
     setOverlayBusy(true);
     try {
@@ -111,7 +120,7 @@ export function JobsTable({
         modelName: jd.model_name,
       });
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Failed to load JD");
+      notifyLoadError(e instanceof Error ? e.message : "Failed to load JD");
     } finally {
       setOverlayBusy(false);
     }
@@ -126,6 +135,7 @@ export function JobsTable({
     setNotesSaving(true);
     try {
       await patchJob(notesDialog.jobId, { notes: notesDialog.body });
+      notifyActionSuccess("Notes saved");
       onRefresh();
       setNotesDialog(null);
     } finally {
@@ -143,7 +153,7 @@ export function JobsTable({
         text,
       });
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Preview failed");
+      notifyLoadError(e instanceof Error ? e.message : "Preview failed");
     } finally {
       setOverlayBusy(false);
     }
@@ -203,7 +213,7 @@ export function JobsTable({
           <EditableCell
             holdKey={`edit-${row.original.id}-captured_by`}
             value={row.original.captured_by}
-            onSave={(v) => patchJob(row.original.id, { captured_by: v }).then(() => onRefresh())}
+            onSave={(v) => saveField(row.original.id, { captured_by: v })}
           />
         ),
       },
@@ -214,7 +224,7 @@ export function JobsTable({
           <EditableCell
             holdKey={`edit-${row.original.id}-company`}
             value={row.original.company_name}
-            onSave={(v) => patchJob(row.original.id, { company_name: v }).then(() => onRefresh())}
+            onSave={(v) => saveField(row.original.id, { company_name: v })}
           />
         ),
       },
@@ -225,7 +235,7 @@ export function JobsTable({
           <EditableCell
             holdKey={`edit-${row.original.id}-title`}
             value={row.original.job_title}
-            onSave={(v) => patchJob(row.original.id, { job_title: v }).then(() => onRefresh())}
+            onSave={(v) => saveField(row.original.id, { job_title: v })}
           />
         ),
       },
@@ -236,7 +246,7 @@ export function JobsTable({
           <EditableCell
             holdKey={`edit-${row.original.id}-location`}
             value={row.original.location}
-            onSave={(v) => patchJob(row.original.id, { location: v }).then(() => onRefresh())}
+            onSave={(v) => saveField(row.original.id, { location: v })}
           />
         ),
       },
@@ -247,7 +257,7 @@ export function JobsTable({
           <EditableCell
             holdKey={`edit-${row.original.id}-salary`}
             value={row.original.salary_text}
-            onSave={(v) => patchJob(row.original.id, { salary_text: v }).then(() => onRefresh())}
+            onSave={(v) => saveField(row.original.id, { salary_text: v })}
           />
         ),
       },
@@ -289,7 +299,7 @@ export function JobsTable({
           <EditableCell
             holdKey={`edit-${row.original.id}-url`}
             value={row.original.source_url}
-            onSave={(v) => patchJob(row.original.id, { source_url: v }).then(() => onRefresh())}
+            onSave={(v) => saveField(row.original.id, { source_url: v })}
           />
         ),
       },
