@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 import uuid
@@ -13,7 +14,8 @@ from app.schemas import (
     JobListResponse,
     JobPatchRequest,
 )
-from app.services.extraction import PROMPT_VERSION, extract_job_data
+from app.services.extraction import PROMPT_VERSION, extract_job_data, prepare_capture_text
+from app.services.job_tags import apply_inferred_tags_to_job
 from app.services.notes import upsert_job_note
 from app.services.search_index import rebuild_job_search_index
 
@@ -32,24 +34,37 @@ def ensure_user(conn: sqlite3.Connection, captured_by: str) -> None:
     )
 
 
-async def capture_job(conn: sqlite3.Connection, payload: CaptureJobRequest) -> str:
+async def capture_job(conn: sqlite3.Connection, payload: CaptureJobRequest) -> tuple[str, str]:
     job_id = str(uuid.uuid4())
     now = _utc_now()
     ensure_user(conn, payload.captured_by)
 
+    captured_html = payload.captured_html.strip()[:200000]
+
     extraction, model_name, raw_json = await extract_job_data(
-        payload.captured_text,
+        captured_html,
         payload.page_title,
         payload.source_url,
     )
+
+    raw_payload_json = payload.raw_payload_json
+    extra = {"captured_html": captured_html}
+    if raw_payload_json:
+        try:
+            merged = {**json.loads(raw_payload_json), **extra}
+        except json.JSONDecodeError:
+            merged = extra
+    else:
+        merged = extra
+    raw_payload_json = json.dumps(merged)
 
     conn.execute(
         """
         INSERT INTO jobs (
             id, captured_by, company_name, job_title, location,
-            salary_text, salary_min, salary_max, salary_currency,
+            salary_text, salary_min, salary_max, salary_currency, salary_period,
             source_url, page_title, captured_at, created_at, updated_at, deleted_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
         """,
         (
             job_id,
@@ -61,6 +76,7 @@ async def capture_job(conn: sqlite3.Connection, payload: CaptureJobRequest) -> s
             extraction.salary_min,
             extraction.salary_max,
             extraction.salary_currency or None,
+            extraction.salary_period,
             payload.source_url or None,
             payload.page_title or None,
             payload.captured_at,
@@ -82,11 +98,11 @@ async def capture_job(conn: sqlite3.Connection, payload: CaptureJobRequest) -> s
             payload.captured_by,
             payload.source_url,
             payload.page_title,
-            payload.captured_text,
+            "",
             payload.captured_at,
             payload.extension_version,
             payload.capture_method,
-            payload.raw_payload_json,
+            raw_payload_json,
         ),
     )
 
@@ -101,7 +117,7 @@ async def capture_job(conn: sqlite3.Connection, payload: CaptureJobRequest) -> s
         (
             jd_id,
             job_id,
-            payload.captured_text,
+            captured_html,
             extraction.cleaned_job_description or None,
             raw_json,
             now,
@@ -111,8 +127,15 @@ async def capture_job(conn: sqlite3.Connection, payload: CaptureJobRequest) -> s
         ),
     )
 
+    prepared = prepare_capture_text(
+        captured_html,
+        payload.page_title,
+        payload.source_url,
+    )
+    apply_inferred_tags_to_job(conn, job_id, extraction, prepared)
+
     rebuild_job_search_index(conn, job_id)
-    return job_id
+    return job_id, model_name
 
 
 def _build_fts_query(term: str) -> str:

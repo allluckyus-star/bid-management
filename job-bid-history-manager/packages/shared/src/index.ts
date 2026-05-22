@@ -69,7 +69,7 @@ export type DashboardSummary = {
 export type CaptureJobPayload = {
   source_url: string;
   page_title: string;
-  captured_text: string;
+  captured_html: string;
   captured_at: string;
   captured_by: string;
   extension_version?: string;
@@ -168,7 +168,6 @@ export type TagPatch = {
 };
 
 export type JDContent = {
-  raw_text: string;
   cleaned_text: string | null;
   extracted_json: Record<string, unknown> | null;
   extracted_at: string | null;

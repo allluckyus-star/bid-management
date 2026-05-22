@@ -37,6 +37,17 @@ def health():
     return {
         "status": "ok",
         "mock_extraction": settings.use_mock_extraction,
+        "extraction_chain": (
+            ["mock"]
+            if settings.use_mock_extraction
+            else (
+                ["groq", "ollama", "mock-heuristic"]
+                if settings.groq_api_key.strip()
+                else ["ollama", "mock-heuristic"]
+            )
+        ),
+        "groq_configured": bool(settings.groq_api_key.strip()),
+        "groq_model": settings.groq_model if settings.groq_api_key.strip() else None,
         "ollama_url": settings.ollama_base_url,
         "ollama_model": settings.ollama_model,
         "port": settings.port,

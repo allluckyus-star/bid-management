@@ -9,31 +9,35 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from app.services.extraction import PROMPT_VERSION
-from app.services.search_index import rebuild_job_search_index
-from app.services.tags import DEFAULT_TAG_COLORS, create_tag, get_or_create_tag_by_name
-from app.schemas import TagCreateRequest
+from app.services.job_tags import infer_job_tags
 from app.services.notes import upsert_job_note
+from app.services.search_index import rebuild_job_search_index
+from app.services.tags import ensure_default_tags, get_or_create_tag_by_name
 
 SAMPLE_USERS = ["Alice Chen", "Bob Rivera", "Carol Kim"]
 
 SAMPLE_JOBS = [
-    ("Acme Corp", "Senior Software Engineer", "Remote · US", "$140k–$180k", "applied"),
-    ("Globex Systems", "Backend Developer", "New York, NY", "$120k–$150k", "interview"),
-    ("Initech", "Full Stack Engineer", "Austin, TX · Hybrid", "$110k–$130k", "waiting"),
-    ("Umbrella Labs", "Platform Engineer", "Remote", "$150k–$175k", "good-fit"),
-    ("Stark Industries", "Cloud Architect", "Seattle, WA", "$160k–$190k", "high-salary"),
-    ("Wayne Enterprises", "DevOps Engineer", "Chicago, IL", "$115k–$140k", "follow-up"),
-    ("Hooli", "Staff Engineer", "San Francisco, CA", "$180k–$220k", "offered"),
-    ("Pied Piper", "React Developer", "Remote · EU", "$95k–$115k", "remote"),
-    ("Massive Dynamic", "ML Engineer", "Boston, MA", "$130k–$160k", "visa"),
-    ("Cyberdyne", "Security Engineer", "Remote · US", "$125k–$155k", "failed"),
-    ("Wonka Digital", "Product Engineer", "Denver, CO", "$105k–$125k", "bad-fit"),
-    ("Oscorp", "Data Engineer", "Portland, OR · Hybrid", "$118k–$138k", "applied"),
+    ("Acme Corp", "Senior Software Engineer", "Remote · US", "$140,000-$180,000"),
+    ("Globex Systems", "Backend Developer", "New York, NY", "$120,000-$150,000"),
+    ("Initech", "Full Stack Engineer", "Austin, TX · Hybrid", "$110,000-$130,000"),
+    ("Umbrella Labs", "Platform Engineer", "Remote", "$150,000-$175,000"),
+    ("Stark Industries", "Cloud Architect", "Seattle, WA", "$160,000-$190,000"),
+    ("Wayne Enterprises", "DevOps Engineer", "Chicago, IL", "$115,000-$140,000"),
+    ("Hooli", "Staff Engineer", "San Francisco, CA", "$180,000-$220,000"),
+    ("Pied Piper", "React Developer", "Remote · EU", "$95,000-$115,000"),
+    ("Massive Dynamic", "ML Engineer", "Boston, MA", "$130,000-$160,000"),
+    ("Cyberdyne", "Security Engineer", "Remote · US", "$125,000-$155,000"),
+    ("Wonka Digital", "Product Engineer", "Denver, CO", "$105,000-$125,000"),
+    ("Oscorp", "Data Engineer", "Portland, OR · Hybrid", "$118,000-$138,000"),
 ]
 
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _tags_for_location(location: str) -> list[str]:
+    return infer_job_tags(location, "full-time", location)
 
 
 def _insert_job(
@@ -45,7 +49,7 @@ def _insert_job(
     location: str,
     salary: str,
     captured_at: datetime,
-    tag_names: list[str],
+    tag_names: list[str] | None = None,
     notes: str | None = None,
 ) -> str:
     job_id = str(uuid.uuid4())
@@ -53,9 +57,10 @@ def _insert_job(
     cap_iso = captured_at.isoformat()
     jd_body = (
         f"{title}\n{company}\n{location}\n{salary}\n\n"
-        f"We are hiring for {title} at {company}. "
+        f"We are hiring for {title} at {company}. Full-time role. "
         f"Requirements include Python, React, Azure, and team collaboration."
     )
+    tags = tag_names if tag_names is not None else _tags_for_location(location)
 
     conn.execute(
         """
@@ -94,7 +99,7 @@ def _insert_job(
         INSERT INTO job_capture_events (
             id, job_id, captured_by, source_url, page_title, captured_text,
             captured_at, extension_version, capture_method, raw_payload_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, '0.2.0', 'seed', NULL)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, '0.3.0', 'seed', NULL)
         """,
         (
             str(uuid.uuid4()),
@@ -125,7 +130,7 @@ def _insert_job(
         ),
     )
 
-    for tag_name in tag_names:
+    for tag_name in tags:
         tag = get_or_create_tag_by_name(conn, tag_name)
         conn.execute(
             "INSERT OR IGNORE INTO job_tags (job_id, tag_id, created_at) VALUES (?, ?, ?)",
@@ -153,36 +158,23 @@ def seed_sample_data(conn: sqlite3.Connection, *, reset: bool = False) -> dict:
             "jobs",
         ):
             conn.execute(f"DELETE FROM {table}")
-        conn.execute("DELETE FROM tags")
         conn.execute("DELETE FROM users")
 
-    # Ensure default tags exist with colors
-    for name, color in DEFAULT_TAG_COLORS.items():
-        try:
-            create_tag(conn, TagCreateRequest(name=name, color=color))
-        except ValueError:
-            pass
+    ensure_default_tags(conn)
 
     now = datetime.now(timezone.utc)
     rng = random.Random(42)
     job_ids: list[str] = []
 
-    # Spread jobs across last 45 days, multiple per day for chart
     for day_offset in range(45, -1, -1):
         day = now - timedelta(days=day_offset)
-        # 0–3 jobs per day, more on weekdays
         count = rng.randint(0, 3) if day.weekday() < 5 else rng.randint(0, 1)
         for _ in range(count):
-            company, title, location, salary, primary_tag = rng.choice(SAMPLE_JOBS)
+            company, title, location, salary = rng.choice(SAMPLE_JOBS)
             user = SAMPLE_USERS[(day_offset + count) % len(SAMPLE_USERS)]
             hour = rng.randint(9, 18)
             minute = rng.choice([0, 15, 30, 45])
             captured_at = day.replace(hour=hour, minute=minute, second=0, microsecond=0)
-
-            extra_tags = []
-            if rng.random() > 0.5:
-                extra_tags.append("remote" if "Remote" in location else "urgent")
-            tag_names = list({primary_tag, *extra_tags})
 
             notes = None
             if rng.random() > 0.6:
@@ -204,14 +196,12 @@ def seed_sample_data(conn: sqlite3.Connection, *, reset: bool = False) -> dict:
                 location=location,
                 salary=salary,
                 captured_at=captured_at,
-                tag_names=tag_names,
                 notes=notes,
             )
             job_ids.append(jid)
 
-    # Extra cluster today for dashboard "today" card
     for i in range(3):
-        company, title, location, salary, primary_tag = SAMPLE_JOBS[i]
+        company, title, location, salary = SAMPLE_JOBS[i]
         captured_at = now - timedelta(hours=i + 1)
         jid = _insert_job(
             conn,
@@ -221,7 +211,6 @@ def seed_sample_data(conn: sqlite3.Connection, *, reset: bool = False) -> dict:
             location=location,
             salary=salary,
             captured_at=captured_at,
-            tag_names=[primary_tag, "applied"],
             notes="Captured today for demo.",
         )
         job_ids.append(jid)
@@ -229,5 +218,4 @@ def seed_sample_data(conn: sqlite3.Connection, *, reset: bool = False) -> dict:
     return {
         "jobs_created": len(job_ids),
         "users": SAMPLE_USERS,
-        "message": "Sample data ready — refresh the desktop UI.",
     }

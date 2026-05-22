@@ -9,7 +9,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { fetchClientInfo, isClientMode, setUpstreamUrl } from "@/lib/client";
+import { fetchClientInfo, getDefaultHostUrl, isClientMode, setUpstreamUrl } from "@/lib/client";
 import { clearApiBaseUrl, getApiBaseUrl, setApiBaseUrl } from "@/lib/settings";
 
 interface ApiSettingsDialogProps {
@@ -25,7 +25,7 @@ export function ApiSettingsDialog({ onSaved }: ApiSettingsDialogProps) {
   useEffect(() => {
     if (clientMode) {
       void fetchClientInfo().then((info) => {
-        setValue(info?.upstream_url ?? "");
+        setValue(info?.upstream_url ?? getDefaultHostUrl());
       });
       return;
     }
@@ -75,7 +75,7 @@ export function ApiSettingsDialog({ onSaved }: ApiSettingsDialogProps) {
           <DialogTitle>{clientMode ? "Team host server" : "API host"}</DialogTitle>
           <p className="text-sm text-muted-foreground">
             {clientMode
-              ? "This app runs a local server on your PC and forwards all requests to the host machine. The UI and Chrome extension always use http://127.0.0.1:5123."
+              ? "This app runs a local server on your PC and forwards all requests to the host machine. The UI and Chrome extension always use http://127.0.0.1:4832 (see header)."
               : "Set the host address for the remote API server."}
           </p>
         </DialogHeader>
@@ -85,14 +85,14 @@ export function ApiSettingsDialog({ onSaved }: ApiSettingsDialogProps) {
             <Input
               value={value}
               onChange={(event) => setValue(event.target.value)}
-              placeholder={clientMode ? "192.168.100.17 or http://192.168.100.17:5123" : "http://127.0.0.1:5123"}
+              placeholder={clientMode ? getDefaultHostUrl() : "http://127.0.0.1:5123"}
               type="url"
             />
           </label>
           {clientMode ? (
             <p className="text-xs text-muted-foreground">
-              Host IP is enough (port <code>:5123</code> is added automatically). Local proxy:{" "}
-              <code>http://127.0.0.1:5123</code> — use that in the Chrome extension popup.
+              Host IP is enough (port <code>:5123</code> is added on the host automatically). Local proxy:{" "}
+              <code>http://127.0.0.1:4832</code> — use that in the Chrome extension popup.
             </p>
           ) : (
             <p className="text-xs text-muted-foreground">

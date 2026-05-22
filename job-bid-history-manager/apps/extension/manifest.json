@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Job Bid History Capture",
-  "version": "0.2.0",
-  "description": "Capture visible job page text and send to Job Bid History Manager API.",
+  "version": "0.3.3",
+  "description": "Capture structured job posting (DOM + HTML) and send to Job Bid History Manager API.",
   "permissions": ["storage", "activeTab", "scripting", "contextMenus", "notifications"],
   "host_permissions": [
     "http://127.0.0.1:5123/*",
@@ -14,6 +14,7 @@
     "default_title": "Capture job bid",
     "default_icon": {
       "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
@@ -30,6 +31,7 @@
   ],
   "icons": {
     "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   }

@@ -1,16 +1,16 @@
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class CaptureJobRequest(BaseModel):
     source_url: str = ""
     page_title: str = ""
-    captured_text: str = Field(min_length=1)
+    captured_html: str = Field(min_length=1)
     captured_at: str
     captured_by: str = Field(min_length=1)
     extension_version: str | None = None
-    capture_method: str | None = "document.body.innerText"
+    capture_method: str | None = "sanitized-html"
     raw_payload_json: str | None = None
 
 
@@ -22,6 +22,7 @@ class JobExtractionResult(BaseModel):
     salary_min: int | None = None
     salary_max: int | None = None
     salary_currency: str = "USD"
+    salary_period: str | None = None  # hourly | monthly | annual
     employment_type: str = ""
     seniority: str = ""
     required_skills: list[str] = Field(default_factory=list)
@@ -125,7 +126,6 @@ class BulkDeleteRequest(BaseModel):
 
 
 class JDOut(BaseModel):
-    raw_text: str
     cleaned_text: str | None = None
     extracted_json: dict[str, Any] | None = None
     extracted_at: str | None = None

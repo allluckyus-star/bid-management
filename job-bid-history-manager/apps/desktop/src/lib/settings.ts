@@ -3,6 +3,13 @@ import { isClientMode } from "./client";
 
 const STORAGE_KEY = "JBHM_API_BASE_URL";
 
+/** Set by Tauri when the local proxy binds (client .exe); may differ from :4832 if port is busy. */
+let clientLocalApiOverride: string | null = null;
+
+export function setClientLocalApiUrl(url: string | null): void {
+  clientLocalApiOverride = url?.trim() ? normalizeApiBaseUrl(url) : null;
+}
+
 export function normalizeApiBaseUrl(raw?: string): string {
   const trimmed = (raw ?? "").trim();
   if (!trimmed) return API_DEFAULT_BASE_URL;
@@ -11,6 +18,7 @@ export function normalizeApiBaseUrl(raw?: string): string {
 
 export function getApiBaseUrl(): string {
   if (isClientMode()) {
+    if (clientLocalApiOverride) return clientLocalApiOverride;
     return normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL ?? API_DEFAULT_BASE_URL);
   }
 

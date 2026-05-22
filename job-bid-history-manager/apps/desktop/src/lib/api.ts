@@ -15,7 +15,11 @@ import type {
   TimelineResponse,
 } from "@jbhm/shared";
 import { API_DEFAULT_BASE_URL } from "@jbhm/shared";
+import { isClientMode } from "./client";
+import { logClientApi } from "./client-log";
 import { getApiBaseUrl } from "./settings";
+
+const CLIENT_FETCH_TIMEOUT_MS = 45_000;
 
 function getBaseUrl(): string {
   return getApiBaseUrl() ?? API_DEFAULT_BASE_URL;
@@ -26,7 +30,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!(init?.body instanceof FormData)) {
     headers["Content-Type"] = headers["Content-Type"] ?? "application/json";
   }
-  const res = await fetch(`${getBaseUrl()}${path}`, { ...init, headers });
+  const base = getBaseUrl();
+  const method = init?.method ?? "GET";
+  const signal =
+    isClientMode() && !init?.signal
+      ? AbortSignal.timeout(CLIENT_FETCH_TIMEOUT_MS)
+      : init?.signal;
+  const started = isClientMode() ? performance.now() : 0;
+  let res: Response;
+  try {
+    res = await fetch(`${base}${path}`, { ...init, headers, signal });
+  } catch (err) {
+    if (isClientMode()) {
+      const ms = Math.round(performance.now() - started);
+      const msg = err instanceof Error ? err.message : String(err);
+      logClientApi(method, path, base, ms, false, msg);
+    }
+    throw err;
+  }
   if (!res.ok) {
     let detail = await res.text();
     try {
@@ -35,7 +56,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* keep */
     }
+    if (isClientMode()) {
+      const ms = Math.round(performance.now() - started);
+      logClientApi(method, path, base, ms, false, `${res.status} ${detail}`);
+    }
     throw new Error(detail || `Request failed: ${res.status}`);
+  }
+  if (isClientMode()) {
+    const ms = Math.round(performance.now() - started);
+    logClientApi(method, path, base, ms, true, String(res.status));
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
@@ -221,14 +250,11 @@ export async function seedDemoCapture(capturedBy: string): Promise<void> {
     body: JSON.stringify({
       source_url: "https://example.com/jobs/senior-engineer",
       page_title: "Senior Software Engineer — Example Corp",
-      captured_text: [
-        "Senior Software Engineer",
-        "Example Corp",
-        "Remote · United States",
-        "$140,000 - $180,000 / year",
-        "",
-        "We are looking for a senior engineer with Azure, FastAPI, and React experience.",
-      ].join("\n"),
+      captured_html:
+        "<article><h1>Senior Software Engineer</h1>" +
+        "<p>Example Corp · Remote · United States</p>" +
+        "<p>$140,000 - $180,000 / year</p>" +
+        "<p>We are looking for a senior engineer with Azure, FastAPI, and React experience.</p></article>",
       captured_at: new Date().toISOString(),
       captured_by: capturedBy,
       extension_version: "0.2.0",

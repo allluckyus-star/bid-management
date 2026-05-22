@@ -11,9 +11,26 @@ body {
   color: #e2e8f0;
 }
 
+.popup-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.popup-logo {
+  border-radius: 8px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 header h1 {
   margin: 0 0 4px;
   font-size: 16px;
+}
+
+.popup-header h1 {
+  margin: 0;
 }
 
 .subtitle {

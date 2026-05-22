@@ -6,7 +6,7 @@ const DAY_MS = 86400000;
 export const VIEW_WINDOW = {
   "1h": { initialHalfDays: 7, panStepDays: 3 },
   "1d": { initialHalfDays: 30, panStepDays: 10 },
-  "1month": { initialHalfMonths: 6, panStepMonths: 3 },
+  "1month": { initialHalfMonths: 1, panStepMonths: 1 },
 } as const;
 
 export type HistoryBounds = { minMs: number | null; maxMs: number | null };

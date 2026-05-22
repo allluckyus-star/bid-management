@@ -223,7 +223,7 @@ def apply_column_search(
                 EXISTS (
                     SELECT 1 FROM job_descriptions jd
                     WHERE jd.job_id = j.id
-                    AND LOWER(COALESCE(jd.raw_text, '')) LIKE LOWER(?)
+                    AND LOWER(COALESCE(jd.cleaned_text, '')) LIKE LOWER(?)
                 )
                 """
             )

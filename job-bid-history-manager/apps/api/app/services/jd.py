@@ -6,7 +6,9 @@ import uuid
 from datetime import datetime, timezone
 
 from app.schemas import JDOut, JobExtractionResult
-from app.services.extraction import PROMPT_VERSION, extract_job_data
+from app.services.capture_source import resolve_capture_for_extraction
+from app.services.extraction import PROMPT_VERSION, extract_job_data, prepare_capture_text
+from app.services.job_tags import apply_inferred_tags_to_job
 from app.services.search_index import rebuild_job_search_index
 
 
@@ -33,7 +35,6 @@ def get_job_jd(conn: sqlite3.Connection, job_id: str) -> JDOut:
             extracted = None
 
     return JDOut(
-        raw_text=row["raw_text"],
         cleaned_text=row["cleaned_text"],
         extracted_json=extracted,
         extracted_at=row["extracted_at"],
@@ -56,10 +57,17 @@ async def reextract_job_jd(conn: sqlite3.Connection, job_id: str) -> tuple[JDOut
     if not jd:
         raise LookupError("Job description not found")
 
+    captured_html, legacy_plain = resolve_capture_for_extraction(
+        conn, job_id, jd["raw_text"]
+    )
+    if not captured_html and not legacy_plain:
+        raise LookupError("No capture HTML found for this job")
+
     extraction, model_name, raw_json = await extract_job_data(
-        jd["raw_text"],
+        captured_html,
         job["page_title"] or "",
         job["source_url"] or "",
+        legacy_plain_text=legacy_plain,
     )
 
     now = _utc_now()
@@ -68,6 +76,7 @@ async def reextract_job_jd(conn: sqlite3.Connection, job_id: str) -> tuple[JDOut
         UPDATE jobs SET
             company_name = ?, job_title = ?, location = ?,
             salary_text = ?, salary_min = ?, salary_max = ?, salary_currency = ?,
+            salary_period = ?,
             updated_at = ?
         WHERE id = ?
         """,
@@ -79,6 +88,7 @@ async def reextract_job_jd(conn: sqlite3.Connection, job_id: str) -> tuple[JDOut
             extraction.salary_min,
             extraction.salary_max,
             extraction.salary_currency or None,
+            extraction.salary_period,
             now,
             job_id,
         ),
@@ -103,6 +113,14 @@ async def reextract_job_jd(conn: sqlite3.Connection, job_id: str) -> tuple[JDOut
             extraction.confidence,
         ),
     )
+
+    prepared = prepare_capture_text(
+        captured_html,
+        job["page_title"] or "",
+        job["source_url"] or "",
+        legacy_plain_text=legacy_plain,
+    )
+    apply_inferred_tags_to_job(conn, job_id, extraction, prepared)
 
     rebuild_job_search_index(conn, job_id)
     return get_job_jd(conn, job_id), extraction

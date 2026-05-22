@@ -1,19 +1,30 @@
 import type { JobListItem, Tag } from "@jbhm/shared";
 import { Plus, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useTableInteraction } from "@/context/table-interaction";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { addTagToJob, createTag, removeTagFromJob } from "@/lib/api";
+import { addTagToJob, removeTagFromJob } from "@/lib/api";
+
+const LOCATION_TAGS = new Set(["remote", "onsite", "hybrid"]);
+const EMPLOYMENT_TAGS = new Set(["full-time", "part-time"]);
 
 type Props = {
   job: JobListItem;
   allTags: Tag[];
+  holdKey: string;
   onUpdated: () => void;
 };
 
-export function TagCell({ job, allTags, onUpdated }: Props) {
+export function TagCell({ job, allTags, holdKey, onUpdated }: Props) {
+  const { setHold } = useTableInteraction();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setHold(holdKey, open);
+    return () => setHold(holdKey, false);
+  }, [open, holdKey, setHold]);
 
   const jobTagIds = new Set(job.tags.map((t) => t.id));
   const available = allTags.filter((t) => !jobTagIds.has(t.id));
@@ -22,18 +33,6 @@ export function TagCell({ job, allTags, onUpdated }: Props) {
     setBusy(true);
     try {
       await addTagToJob(job.id, tagId);
-      onUpdated();
-      setOpen(false);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleCreateAndAdd = async (name: string) => {
-    setBusy(true);
-    try {
-      const tag = await createTag({ name });
-      await addTagToJob(job.id, tag.id);
       onUpdated();
       setOpen(false);
     } finally {
@@ -51,8 +50,11 @@ export function TagCell({ job, allTags, onUpdated }: Props) {
     }
   };
 
+  const groupTags = (names: Set<string>) =>
+    allTags.filter((t) => names.has(t.name.toLowerCase()));
+
   return (
-    <div className="relative flex max-w-[200px] flex-wrap items-center gap-1">
+    <div className="relative flex max-w-[220px] flex-wrap items-center gap-1">
       {job.tags.map((tag) => (
         <Badge
           key={tag.id}
@@ -72,49 +74,48 @@ export function TagCell({ job, allTags, onUpdated }: Props) {
           </button>
         </Badge>
       ))}
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-6 w-6 p-0"
-        onClick={() => setOpen((v) => !v)}
-        disabled={busy}
-      >
-        <Plus className="h-3 w-3" />
-      </Button>
-      {open && (
-        <div className="absolute left-0 top-full z-20 mt-1 min-w-[140px] rounded-lg border bg-card p-2 shadow-lg">
-          {available.length === 0 ? (
-            <p className="px-2 py-1 text-xs text-muted-foreground">No more tags</p>
-          ) : (
-            available.map((tag) => (
+      {available.length > 0 && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 w-6 p-0"
+          onClick={() => setOpen((v) => !v)}
+          disabled={busy}
+          aria-label="Add tag"
+        >
+          <Plus className="h-3 w-3" />
+        </Button>
+      )}
+      {open && available.length > 0 && (
+        <div className="absolute left-0 top-full z-20 mt-1 min-w-[160px] rounded-lg border bg-card p-2 text-xs shadow-lg">
+          <p className="px-2 py-0.5 font-medium text-muted-foreground">Location</p>
+          {groupTags(LOCATION_TAGS)
+            .filter((t) => !jobTagIds.has(t.id))
+            .map((tag) => (
               <button
                 key={tag.id}
                 type="button"
-                className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-muted"
+                className="block w-full rounded px-2 py-1 text-left hover:bg-muted"
                 onClick={() => void handleAdd(tag.id)}
               >
                 {tag.name}
               </button>
-            ))
-          )}
-          <form
-            className="mt-2 flex gap-1 border-t pt-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const fd = new FormData(e.currentTarget);
-              const name = String(fd.get("tagName") ?? "").trim();
-              if (name) void handleCreateAndAdd(name);
-            }}
-          >
-            <input
-              name="tagName"
-              className="h-7 flex-1 rounded border px-2 text-xs"
-              placeholder="New tag"
-            />
-            <Button type="submit" size="sm" className="h-7 px-2 text-xs">
-              +
-            </Button>
-          </form>
+            ))}
+          <p className="mt-1 border-t px-2 py-0.5 pt-1 font-medium text-muted-foreground">
+            Employment
+          </p>
+          {groupTags(EMPLOYMENT_TAGS)
+            .filter((t) => !jobTagIds.has(t.id))
+            .map((tag) => (
+              <button
+                key={tag.id}
+                type="button"
+                className="block w-full rounded px-2 py-1 text-left hover:bg-muted"
+                onClick={() => void handleAdd(tag.id)}
+              >
+                {tag.name}
+              </button>
+            ))}
         </div>
       )}
     </div>

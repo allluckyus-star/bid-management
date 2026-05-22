@@ -8,6 +8,8 @@
     "start": "python -m uvicorn app.main:app --host 127.0.0.1 --port 5123",
     "start:lan": "python -m uvicorn app.main:app --host 0.0.0.0 --port 5123",
     "seed": "python -m scripts.seed_sample",
-    "seed:reset": "python -m scripts.seed_sample --reset"
+    "seed:reset": "python -m scripts.seed_sample --reset",
+    "demo:once": "python -m scripts.demo_tick --once",
+    "demo:tick": "python -m scripts.demo_tick --interval 60"
   }
 }

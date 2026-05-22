@@ -5,16 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:client": "vite --mode client",
+    "dev:vite:client": "vite --mode client",
     "dev:lan": "vite --mode lan --host 0.0.0.0",
+    "prebuild": "npm run generate:icons --prefix ../..",
     "build": "tsc -b && vite build",
-    "build:client": "tsc -b && vite build --mode client",
+    "build:client": "npm run generate:icons --prefix ../.. && tsc -b && vite build --mode client",
     "preview": "vite preview",
     "tauri": "node ../../scripts/run-with-cargo.mjs tauri",
     "tauri:dev": "node ../../scripts/run-with-cargo.mjs tauri dev",
-    "tauri:dev:client": "node ../../scripts/run-with-cargo.mjs tauri dev --config src-tauri/tauri.client.conf.json --features client",
     "tauri:build": "node ../../scripts/run-with-cargo.mjs tauri build",
-    "tauri:build:client": "node ../../scripts/run-with-cargo.mjs tauri build --config src-tauri/tauri.client.conf.json --features client"
+    "dev:client": "npm run build:client && node ../../scripts/run-gateway-dev.mjs",
+    "bundle:client": "node ../../scripts/bundle-client.mjs"
   },
   "dependencies": {
     "@jbhm/shared": "*",

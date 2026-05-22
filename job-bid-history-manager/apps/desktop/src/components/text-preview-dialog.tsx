@@ -23,6 +23,8 @@ export function TextPreviewDialog({
   secondary,
   secondaryLabel = "Raw capture",
 }: Props) {
+  const body = (primary ?? "").trim();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] max-w-2xl overflow-hidden">
@@ -30,14 +32,13 @@ export function TextPreviewDialog({
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         <div className="max-h-[65vh] space-y-4 overflow-y-auto pr-2 text-sm">
-          {primary && (
-            <section>
-              <h4 className="mb-2 font-medium text-muted-foreground">Content</h4>
-              <pre className="whitespace-pre-wrap rounded-lg bg-muted/50 p-3 font-sans text-xs leading-relaxed">
-                {sanitizeDisplayText(primary)}
-              </pre>
-            </section>
-          )}
+          {body ? (
+            <pre className="whitespace-pre-wrap rounded-lg bg-muted/50 p-3 font-sans text-xs leading-relaxed">
+              {sanitizeDisplayText(body)}
+            </pre>
+          ) : !secondary ? (
+            <p className="text-sm text-muted-foreground">No content yet.</p>
+          ) : null}
           {secondary && (
             <section>
               <h4 className="mb-2 font-medium text-muted-foreground">{secondaryLabel}</h4>

@@ -1,22 +1,31 @@
+#[cfg(feature = "client")]
+pub mod client_config;
+#[cfg(not(feature = "client"))]
 mod client_config;
 
 #[cfg(feature = "client")]
-mod proxy;
+pub mod client_env;
+
+#[cfg(feature = "client")]
+pub mod client_log;
+
+#[cfg(feature = "client")]
+pub mod proxy;
+
+#[cfg(feature = "client")]
+pub mod proxy_blocking;
+
+pub mod extension_install;
 
 use serde::Serialize;
 use std::{
-    fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::Command,
     sync::{Arc, RwLock},
 };
-use tauri::Manager;
+use tauri::{Manager, RunEvent, WindowEvent};
 
-#[derive(Serialize)]
-struct ExtensionInstallInfo {
-    path: String,
-    created: bool,
-}
+type ExtensionInstallInfo = extension_install::ExtensionInstallInfo;
 
 #[derive(Clone, Serialize)]
 struct ClientInfo {
@@ -24,47 +33,19 @@ struct ClientInfo {
     local_api_url: String,
     upstream_url: Option<String>,
     proxy_listen: String,
+    proxy_ready: bool,
+    /// True when local GET /health succeeded (UI may fetch).
+    proxy_http_ready: bool,
+    /// Host /health probe from Rust (None = not checked yet).
+    host_reachable: Option<bool>,
+    proxy_error: Option<String>,
 }
 
 #[cfg(feature = "client")]
 struct ClientAppState {
     upstream: proxy::UpstreamStore,
-}
-
-const EXTENSION_DIR_NAME: &str = "chrome-extension";
-
-const MANIFEST_JSON: &str = include_str!("../../../extension/manifest.json");
-const BACKGROUND_JS: &str = include_str!("../../../extension/background.js");
-const CONTENT_JS: &str = include_str!("../../../extension/content.js");
-const POPUP_CSS: &str = include_str!("../../../extension/popup.css");
-const POPUP_HTML: &str = include_str!("../../../extension/popup.html");
-const POPUP_JS: &str = include_str!("../../../extension/popup.js");
-const README_MD: &str = include_str!("../../../extension/README.md");
-
-#[cfg(feature = "client")]
-const CLIENT_EXTENSION_SETUP: &str = r#"Job Bid History Manager — Chrome extension (teammate client)
-
-1. Open chrome://extensions
-2. Enable Developer mode
-3. Click "Load unpacked" and select this folder
-
-Extension API URL (keep default):
-  http://127.0.0.1:5123
-
-The desktop app forwards that address to your team's host PC.
-Set your name in the extension popup (Captured by) before capturing jobs.
-"#;
-
-const ICON_16: &[u8] = include_bytes!("../../../extension/icons/icon16.png");
-const ICON_48: &[u8] = include_bytes!("../../../extension/icons/icon48.png");
-const ICON_128: &[u8] = include_bytes!("../../../extension/icons/icon128.png");
-
-fn write_text_file(path: &Path, contents: &str) -> Result<(), String> {
-    fs::write(path, contents).map_err(|err| format!("failed to write {}: {err}", path.display()))
-}
-
-fn write_binary_file(path: &Path, contents: &[u8]) -> Result<(), String> {
-    fs::write(path, contents).map_err(|err| format!("failed to write {}: {err}", path.display()))
+    proxy_status: proxy::ProxyStatusStore,
+    last_logged_client_sig: std::sync::Mutex<String>,
 }
 
 fn extension_install_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -72,42 +53,16 @@ fn extension_install_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .path()
         .app_local_data_dir()
         .map_err(|err| format!("failed to resolve app data directory: {err}"))?;
-    Ok(base.join(EXTENSION_DIR_NAME))
+    Ok(base.join("chrome-extension"))
 }
 
 fn extract_extension_if_missing(app: &tauri::AppHandle) -> Result<ExtensionInstallInfo, String> {
     let install_dir = extension_install_dir(app)?;
-
-    if install_dir.exists() {
-        return Ok(ExtensionInstallInfo {
-            path: install_dir.display().to_string(),
-            created: false,
-        });
-    }
-
-    fs::create_dir_all(install_dir.join("icons"))
-        .map_err(|err| format!("failed to create extension directory: {err}"))?;
-
-    write_text_file(&install_dir.join("manifest.json"), MANIFEST_JSON)?;
-    write_text_file(&install_dir.join("background.js"), BACKGROUND_JS)?;
-    write_text_file(&install_dir.join("content.js"), CONTENT_JS)?;
-    write_text_file(&install_dir.join("popup.css"), POPUP_CSS)?;
-    write_text_file(&install_dir.join("popup.html"), POPUP_HTML)?;
-    write_text_file(&install_dir.join("popup.js"), POPUP_JS)?;
-    write_text_file(&install_dir.join("README.md"), README_MD)?;
     #[cfg(feature = "client")]
-    write_text_file(
-        &install_dir.join("TEAMMATE_SETUP.txt"),
-        CLIENT_EXTENSION_SETUP,
-    )?;
-    write_binary_file(&install_dir.join("icons").join("icon16.png"), ICON_16)?;
-    write_binary_file(&install_dir.join("icons").join("icon48.png"), ICON_48)?;
-    write_binary_file(&install_dir.join("icons").join("icon128.png"), ICON_128)?;
-
-    Ok(ExtensionInstallInfo {
-        path: install_dir.display().to_string(),
-        created: true,
-    })
+    let client_mode = true;
+    #[cfg(not(feature = "client"))]
+    let client_mode = false;
+    extension_install::ensure_at(install_dir, client_mode)
 }
 
 #[tauri::command]
@@ -128,15 +83,73 @@ fn open_extension_folder(app: tauri::AppHandle) -> Result<ExtensionInstallInfo, 
 }
 
 #[cfg(feature = "client")]
-#[tauri::command]
-fn get_client_info(state: tauri::State<ClientAppState>) -> ClientInfo {
-    let upstream_url = state.upstream.read().ok().and_then(|v| v.clone());
+pub(crate) fn read_client_info_for_proxy(
+    upstream: &proxy::UpstreamStore,
+    proxy_status: &proxy::ProxyStatusStore,
+) -> ClientInfo {
+    let upstream_url = upstream.read().ok().and_then(|v| v.clone());
+    let proxy = proxy_status.read().ok();
+    let proxy_error = proxy.as_ref().and_then(|p| p.error.clone());
+    let proxy_http_ready = proxy.as_ref().map(|p| p.http_ready).unwrap_or(false);
+    let host_reachable = proxy.as_ref().and_then(|p| p.host_reachable);
+    let proxy_ready = proxy
+        .as_ref()
+        .map(|p| p.listen_url.is_some() && p.http_ready && p.error.is_none())
+        .unwrap_or(false);
+    let listen_url = if proxy_ready {
+        proxy
+            .as_ref()
+            .and_then(|p| p.listen_url.clone())
+            .unwrap_or_else(|| proxy::LOCAL_API_URL.to_string())
+    } else {
+        String::new()
+    };
     ClientInfo {
         is_client: true,
-        local_api_url: proxy::LOCAL_API_URL.to_string(),
+        local_api_url: if listen_url.is_empty() {
+            proxy::LOCAL_API_URL.to_string()
+        } else {
+            listen_url.clone()
+        },
         upstream_url,
-        proxy_listen: "127.0.0.1:5123".to_string(),
+        proxy_listen: listen_url,
+        proxy_ready,
+        proxy_http_ready,
+        host_reachable,
+        proxy_error,
     }
+}
+
+#[cfg(feature = "client")]
+fn read_client_info(state: &ClientAppState) -> ClientInfo {
+    read_client_info_for_proxy(&state.upstream, &state.proxy_status)
+}
+
+#[cfg(feature = "client")]
+fn client_info_signature(info: &ClientInfo) -> String {
+    format!(
+        "ready={} http={} host={:?} listen={} upstream={:?} err={:?}",
+        info.proxy_ready,
+        info.proxy_http_ready,
+        info.host_reachable,
+        info.local_api_url,
+        info.upstream_url,
+        info.proxy_error
+    )
+}
+
+#[cfg(feature = "client")]
+#[tauri::command]
+fn get_client_info(state: tauri::State<ClientAppState>) -> ClientInfo {
+    let info = read_client_info(&state);
+    let sig = client_info_signature(&info);
+    if let Ok(mut guard) = state.last_logged_client_sig.lock() {
+        if *guard != sig {
+            *guard = sig.clone();
+            client_log::info(format!("client status: {sig}"));
+        }
+    }
+    info
 }
 
 #[cfg(feature = "client")]
@@ -160,12 +173,26 @@ fn set_upstream_url(
             upstream_url: Some(normalized.clone()),
         },
     )?;
-    Ok(ClientInfo {
-        is_client: true,
-        local_api_url: proxy::LOCAL_API_URL.to_string(),
-        upstream_url: Some(normalized),
-        proxy_listen: "127.0.0.1:5123".to_string(),
-    })
+    client_log::info(format!("host server set to {normalized}"));
+    Ok(read_client_info(&state))
+}
+
+#[cfg(feature = "client")]
+#[tauri::command]
+fn get_client_log_path(app: tauri::AppHandle) -> Result<String, String> {
+    Ok(client_log::log_file_path(&app)?.display().to_string())
+}
+
+#[cfg(feature = "client")]
+#[tauri::command]
+fn log_client_message(level: String, message: String) -> Result<(), String> {
+    match level.as_str() {
+        "error" => client_log::error(message),
+        "warn" => client_log::warn(message),
+        "debug" => client_log::debug(message),
+        _ => client_log::info(message),
+    }
+    Ok(())
 }
 
 #[cfg(not(feature = "client"))]
@@ -176,6 +203,10 @@ fn get_client_info() -> ClientInfo {
         local_api_url: String::new(),
         upstream_url: None,
         proxy_listen: String::new(),
+        proxy_ready: false,
+        proxy_http_ready: false,
+        host_reachable: None,
+        proxy_error: None,
     }
 }
 
@@ -185,30 +216,77 @@ pub fn run() {
     {
         tauri::Builder::default()
             .plugin(tauri_plugin_dialog::init())
+            .on_window_event(|window, event| {
+                let label = window.label();
+                match event {
+                    WindowEvent::CloseRequested { api: _, .. } => {
+                        client_log::warn(format!("WindowEvent::CloseRequested label={label}"));
+                    }
+                    WindowEvent::Destroyed => {
+                        client_log::error(format!(
+                            "WindowEvent::Destroyed label={label} (window/webview torn down — if app exits next, likely WebView2 crash)"
+                        ));
+                    }
+                    WindowEvent::Focused(focused) => {
+                        client_log::info(format!("WindowEvent::Focused label={label} focused={focused}"));
+                    }
+                    _ => {}
+                }
+            })
             .setup(|app| {
                 let handle = app.handle().clone();
-                let mut loaded = client_config::load(&handle)?;
-                if let Some(ref url) = loaded.upstream_url {
-                    if let Some(fixed) = client_config::normalize_stored_upstream(url) {
-                        if fixed != *url {
-                            loaded.upstream_url = Some(fixed.clone());
-                            let _ = client_config::save(&handle, &loaded);
-                        }
-                    }
+                if let Err(err) = client_log::init(&handle) {
+                    eprintln!("jbhm: failed to init log file: {err}");
                 }
+                // Don't block the UI/proxy ~10s on PowerShell/reg probes (Miller: WebView can crash during wait).
+                std::thread::spawn(|| client_env::log_environment_snapshot());
+                let loaded = match client_config::load(&handle) {
+                    Ok(v) => v,
+                    Err(err) => {
+                        client_log::error(format!("client config load failed: {err}"));
+                        return Err(err.into());
+                    }
+                };
+                if let Ok(config_path) = client_config::config_path(&handle) {
+                    client_log::info(format!("client.json path: {}", config_path.display()));
+                }
+                client_log::info(format!(
+                    "upstream default/config: {:?}",
+                    loaded.upstream_url
+                ));
                 let upstream = Arc::new(RwLock::new(loaded.upstream_url));
-                proxy::spawn_proxy(upstream.clone());
-                app.manage(ClientAppState { upstream });
+                let proxy_status = Arc::new(RwLock::new(proxy::ProxyStatus::default()));
+                proxy::spawn_proxy(upstream.clone(), proxy_status.clone());
+                app.manage(ClientAppState {
+                    upstream,
+                    proxy_status,
+                    last_logged_client_sig: std::sync::Mutex::new(String::new()),
+                });
                 Ok(())
             })
             .invoke_handler(tauri::generate_handler![
                 ensure_extension_folder,
                 open_extension_folder,
                 get_client_info,
-                set_upstream_url
+                set_upstream_url,
+                get_client_log_path,
+                log_client_message
             ])
-            .run(tauri::generate_context!())
-            .expect("error while running tauri application");
+            .build(tauri::generate_context!())
+            .expect("error while building tauri application")
+            .run(|_app, event| {
+                match event {
+                    RunEvent::Ready => client_log::info("tauri RunEvent::Ready"),
+                    RunEvent::Exit => {
+                        client_log::info("tauri RunEvent::Exit (app shutting down — normal or webview crash)");
+                    }
+                    RunEvent::ExitRequested { code, .. } => {
+                        client_log::warn(format!("RunEvent::ExitRequested code={code:?}"));
+                    }
+                    RunEvent::MainEventsCleared => {}
+                    other => client_log::info(format!("tauri event: {other:?}")),
+                }
+            });
     }
 
     #[cfg(not(feature = "client"))]

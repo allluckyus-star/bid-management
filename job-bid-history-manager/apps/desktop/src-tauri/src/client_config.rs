@@ -2,9 +2,17 @@ use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 use tauri::Manager;
 
+/// Default team host API (used until the user saves a different Host Server URL).
+pub const DEFAULT_UPSTREAM_URL: &str = "http://192.168.100.17:5123";
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ClientConfigFile {
     pub upstream_url: Option<String>,
+}
+
+pub fn default_upstream() -> String {
+    normalize_upstream_url(DEFAULT_UPSTREAM_URL)
+        .unwrap_or_else(|_| DEFAULT_UPSTREAM_URL.to_string())
 }
 
 pub fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -17,12 +25,23 @@ pub fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 pub fn load(app: &tauri::AppHandle) -> Result<ClientConfigFile, String> {
     let path = config_path(app)?;
-    if !path.exists() {
-        return Ok(ClientConfigFile::default());
+    let mut config = if !path.exists() {
+        ClientConfigFile::default()
+    } else {
+        let raw = fs::read_to_string(&path)
+            .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+        serde_json::from_str(&raw).map_err(|e| format!("invalid client config: {e}"))?
+    };
+
+    if let Some(ref url) = config.upstream_url {
+        if let Some(fixed) = normalize_stored_upstream(url) {
+            config.upstream_url = Some(fixed);
+        }
+    } else {
+        config.upstream_url = Some(default_upstream());
     }
-    let raw = fs::read_to_string(&path)
-        .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
-    serde_json::from_str(&raw).map_err(|e| format!("invalid client config: {e}"))
+
+    Ok(config)
 }
 
 pub fn save(app: &tauri::AppHandle, config: &ClientConfigFile) -> Result<(), String> {
@@ -64,4 +83,46 @@ pub fn normalize_upstream_url(raw: &str) -> Result<String, String> {
 
 pub fn normalize_stored_upstream(url: &str) -> Option<String> {
     normalize_upstream_url(url).ok()
+}
+
+/// Same path as Tauri `app_config_dir` / `client.json` (browser-mode gateway, no WebView).
+#[cfg(feature = "client")]
+pub fn standalone_config_path() -> Result<PathBuf, String> {
+    let roaming = std::env::var("APPDATA")
+        .map_err(|e| format!("APPDATA not set: {e}"))?;
+    Ok(PathBuf::from(roaming)
+        .join("com.jbhm.desktop.client")
+        .join("client.json"))
+}
+
+#[cfg(feature = "client")]
+pub fn load_standalone() -> Result<ClientConfigFile, String> {
+    let path = standalone_config_path()?;
+    let mut config = if !path.exists() {
+        ClientConfigFile::default()
+    } else {
+        let raw = fs::read_to_string(&path)
+            .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+        serde_json::from_str(&raw).map_err(|e| format!("invalid client config: {e}"))?
+    };
+    if let Some(ref url) = config.upstream_url {
+        if let Some(fixed) = normalize_stored_upstream(url) {
+            config.upstream_url = Some(fixed);
+        }
+    } else {
+        config.upstream_url = Some(default_upstream());
+    }
+    Ok(config)
+}
+
+#[cfg(feature = "client")]
+pub fn save_standalone(config: &ClientConfigFile) -> Result<(), String> {
+    let path = standalone_config_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create config directory: {e}"))?;
+    }
+    let raw = serde_json::to_string_pretty(config)
+        .map_err(|e| format!("failed to serialize client config: {e}"))?;
+    fs::write(&path, raw).map_err(|e| format!("failed to write {}: {e}", path.display()))
 }

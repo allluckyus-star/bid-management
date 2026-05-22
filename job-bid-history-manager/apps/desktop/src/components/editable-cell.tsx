@@ -1,16 +1,24 @@
 import { useEffect, useState } from "react";
+import { useTableInteraction } from "@/context/table-interaction";
 import { cn } from "@/lib/utils";
 
 type Props = {
   value: string | null | undefined;
   onSave: (value: string) => Promise<void>;
+  holdKey: string;
   className?: string;
 };
 
-export function EditableCell({ value, onSave, className }: Props) {
+export function EditableCell({ value, onSave, holdKey, className }: Props) {
+  const { setHold } = useTableInteraction();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setHold(holdKey, editing);
+    return () => setHold(holdKey, false);
+  }, [editing, holdKey, setHold]);
 
   useEffect(() => {
     if (!editing) setDraft(value ?? "");
@@ -41,7 +49,9 @@ export function EditableCell({ value, onSave, className }: Props) {
         disabled={saving}
         autoFocus
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => void commit()}
+        onBlur={() => {
+          window.setTimeout(() => void commit(), 0);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter") void commit();
           if (e.key === "Escape") {
@@ -61,6 +71,7 @@ export function EditableCell({ value, onSave, className }: Props) {
         !value && "text-muted-foreground",
         className,
       )}
+      onMouseDown={(e) => e.preventDefault()}
       onClick={() => setEditing(true)}
       title={value ?? "Click to edit"}
     >

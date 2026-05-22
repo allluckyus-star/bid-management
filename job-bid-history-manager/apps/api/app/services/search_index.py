@@ -15,7 +15,7 @@ def rebuild_job_search_index(conn: sqlite3.Connection, job_id: str) -> None:
             COALESCE(j.location, '') AS location,
             COALESCE(j.salary_text, '') AS salary_text,
             COALESCE(j.source_url, '') AS source_url,
-            COALESCE(jd.cleaned_text, jd.raw_text, '') AS jd_text,
+            COALESCE(jd.cleaned_text, '') AS jd_text,
             COALESCE(rt.extracted_text, '') AS resume_text,
             COALESCE(rf.original_filename, '') AS resume_filename,
             COALESCE((

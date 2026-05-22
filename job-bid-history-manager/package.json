@@ -11,10 +11,24 @@
     "dev:api:lan": "npm run dev:lan -w @jbhm/api",
     "seed": "npm run seed -w @jbhm/api",
     "seed:reset": "npm run seed:reset -w @jbhm/api",
+    "demo:once": "npm run demo:once -w @jbhm/api",
+    "demo:tick": "npm run demo:tick -w @jbhm/api",
+    "dev:web": "npm run build:shared && npm run dev -w @jbhm/web",
+    "build:web": "npm run build:shared && npm run build -w @jbhm/web",
     "dev:desktop": "npm run dev -w @jbhm/desktop",
     "dev:web:lan": "npm run dev:lan -w @jbhm/desktop",
     "build:desktop": "npm run build -w @jbhm/desktop",
-    "build:client": "npm run build:shared && npm run tauri:build:client -w @jbhm/desktop",
-    "build:shared": "npm run build -w @jbhm/shared"
+    "build:client": "node scripts/bundle-client.mjs",
+    "build:shared": "npm run build -w @jbhm/shared",
+    "generate:icons": "node scripts/generate-icons.mjs"
+  },
+  "devDependencies": {
+    "sharp": "^0.33.5"
+  },
+  "overrides": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0"
   }
 }

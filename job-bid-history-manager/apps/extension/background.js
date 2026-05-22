@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = "0.2.0";
+const EXTENSION_VERSION = "0.3.3";
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
@@ -21,6 +21,10 @@ async function getSettings() {
   return stored;
 }
 
+function hasContent(pageData) {
+  return Boolean(pageData?.captured_html?.trim());
+}
+
 async function captureActiveTab(tabId) {
   const settings = await getSettings();
   if (!settings.capturedBy?.trim()) {
@@ -35,8 +39,8 @@ async function captureActiveTab(tabId) {
 
   try {
     const pageData = await chrome.tabs.sendMessage(tabId, { type: "GET_VISIBLE_TEXT" });
-    if (!pageData?.captured_text?.trim()) {
-      throw new Error("No visible text found on this page.");
+    if (!hasContent(pageData)) {
+      throw new Error("No job content found on this page.");
     }
     await postCapture(settings, pageData);
     chrome.notifications.create({
@@ -59,11 +63,11 @@ async function postCapture(settings, pageData) {
   const payload = {
     source_url: pageData.source_url,
     page_title: pageData.page_title,
-    captured_text: pageData.captured_text,
+    captured_html: pageData.captured_html || "",
     captured_at: new Date().toISOString(),
     captured_by: settings.capturedBy.trim(),
     extension_version: EXTENSION_VERSION,
-    capture_method: pageData.capture_method || "document.body.innerText",
+    capture_method: pageData.capture_method || "structured-dom+html",
   };
 
   const res = await fetch(`${settings.apiBaseUrl.replace(/\/$/, "")}/capture/job`, {
@@ -94,8 +98,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
         const pageData = await chrome.tabs.sendMessage(tab.id, { type: "GET_VISIBLE_TEXT" });
-        if (!pageData?.captured_text?.trim()) {
-          sendResponse({ ok: false, error: "No visible text on this page." });
+        if (!hasContent(pageData)) {
+          sendResponse({ ok: false, error: "No job content on this page." });
           return;
         }
         const result = await postCapture(settings, pageData);

@@ -24,17 +24,28 @@ import { EditableCell } from "@/components/editable-cell";
 import { JdCell } from "@/components/jd-cell";
 import { NotesCell } from "@/components/notes-cell";
 import { ResumeCell } from "@/components/resume-cell";
+import { TextPreviewDialog } from "@/components/text-preview-dialog";
 import { TableColumnHeader } from "@/components/table-column-header";
 import { TagCell } from "@/components/tag-cell";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { patchJob } from "@/lib/api";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { TableInteractionContext } from "@/context/table-interaction";
+import { useHoldKey } from "@/hooks/use-interaction-hold";
+import { fetchJobJd, fetchResumePreview, patchJob, reextractJobJd } from "@/lib/api";
 import {
   COLUMN_CONTROLS,
   cycleColumnSort,
   isFilterableField,
   isOrderableField,
 } from "@/lib/column-controls";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 type Props = {
   data: JobListItem[];
@@ -50,6 +61,8 @@ type Props = {
   onSortChange: (sort: JobSortEntry[]) => void;
   onRowSelectionChange: (state: RowSelectionState) => void;
   onRefresh: () => void;
+  setInteractionHold: (key: string, active: boolean) => void;
+  interactionHeld: boolean;
 };
 
 export function JobsTable({
@@ -66,9 +79,97 @@ export function JobsTable({
   onSortChange,
   onRowSelectionChange,
   onRefresh,
+  setInteractionHold,
+  interactionHeld,
 }: Props) {
   const [filterField, setFilterField] = useState<JobFilterableField | null>(null);
   const [searchField, setSearchField] = useState<JobSortField | null>(null);
+  const [jdDialog, setJdDialog] = useState<{
+    text: string | null;
+    modelName: string | null;
+  } | null>(null);
+  const [notesDialog, setNotesDialog] = useState<{ jobId: string; body: string } | null>(null);
+  const [resumeDialog, setResumeDialog] = useState<{
+    title: string;
+    text: string;
+  } | null>(null);
+  const [overlayBusy, setOverlayBusy] = useState(false);
+  const [notesSaving, setNotesSaving] = useState(false);
+
+  useHoldKey(setInteractionHold, "column-filter", !!filterField);
+  useHoldKey(setInteractionHold, "column-search", !!searchField);
+  useHoldKey(setInteractionHold, "jd-dialog", !!jdDialog);
+  useHoldKey(setInteractionHold, "notes-dialog", !!notesDialog);
+  useHoldKey(setInteractionHold, "resume-dialog", !!resumeDialog);
+
+  const openJd = async (job: JobListItem) => {
+    setOverlayBusy(true);
+    try {
+      const jd = await fetchJobJd(job.id);
+      setJdDialog({
+        text: jd.cleaned_text,
+        modelName: jd.model_name,
+      });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to load JD");
+    } finally {
+      setOverlayBusy(false);
+    }
+  };
+
+  const reextractJd = async (job: JobListItem) => {
+    setOverlayBusy(true);
+    try {
+      const res = await reextractJobJd(job.id);
+      setJdDialog({
+        text: res.jd.cleaned_text,
+        modelName: res.jd.model_name,
+      });
+      onRefresh();
+      alert("Re-extraction complete. Structured fields updated.");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Re-extract failed (is Ollama running?)");
+    } finally {
+      setOverlayBusy(false);
+    }
+  };
+
+  const openNotes = (job: JobListItem) => {
+    setNotesDialog({ jobId: job.id, body: job.notes ?? "" });
+  };
+
+  const saveNotes = async () => {
+    if (!notesDialog) return;
+    setNotesSaving(true);
+    try {
+      await patchJob(notesDialog.jobId, { notes: notesDialog.body });
+      onRefresh();
+      setNotesDialog(null);
+    } finally {
+      setNotesSaving(false);
+    }
+  };
+
+  const openResumePreview = async (job: JobListItem) => {
+    if (!job.resume) return;
+    setOverlayBusy(true);
+    try {
+      const text = await fetchResumePreview(job.resume.id);
+      setResumeDialog({
+        title: `Resume — ${job.resume.original_filename}`,
+        text,
+      });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Preview failed");
+    } finally {
+      setOverlayBusy(false);
+    }
+  };
+
+  const interactionCtx = useMemo(
+    () => ({ setHold: setInteractionHold, interactionHeld }),
+    [setInteractionHold, interactionHeld],
+  );
   const colHeader = (field: JobSortField) => {
     const cfg = COLUMN_CONTROLS[field];
     const sortEntry = sort.find((s) => s.field === field);
@@ -117,6 +218,7 @@ export function JobsTable({
         header: () => colHeader("captured_by"),
         cell: ({ row }) => (
           <EditableCell
+            holdKey={`edit-${row.original.id}-captured_by`}
             value={row.original.captured_by}
             onSave={(v) => patchJob(row.original.id, { captured_by: v }).then(() => onRefresh())}
           />
@@ -127,6 +229,7 @@ export function JobsTable({
         header: () => colHeader("company_name"),
         cell: ({ row }) => (
           <EditableCell
+            holdKey={`edit-${row.original.id}-company`}
             value={row.original.company_name}
             onSave={(v) => patchJob(row.original.id, { company_name: v }).then(() => onRefresh())}
           />
@@ -137,6 +240,7 @@ export function JobsTable({
         header: () => colHeader("job_title"),
         cell: ({ row }) => (
           <EditableCell
+            holdKey={`edit-${row.original.id}-title`}
             value={row.original.job_title}
             onSave={(v) => patchJob(row.original.id, { job_title: v }).then(() => onRefresh())}
           />
@@ -147,6 +251,7 @@ export function JobsTable({
         header: () => colHeader("location"),
         cell: ({ row }) => (
           <EditableCell
+            holdKey={`edit-${row.original.id}-location`}
             value={row.original.location}
             onSave={(v) => patchJob(row.original.id, { location: v }).then(() => onRefresh())}
           />
@@ -157,6 +262,7 @@ export function JobsTable({
         header: () => colHeader("salary_text"),
         cell: ({ row }) => (
           <EditableCell
+            holdKey={`edit-${row.original.id}-salary`}
             value={row.original.salary_text}
             onSave={(v) => patchJob(row.original.id, { salary_text: v }).then(() => onRefresh())}
           />
@@ -165,23 +271,45 @@ export function JobsTable({
       {
         id: "tags",
         header: () => colHeader("tags"),
-        cell: ({ row }) => <TagCell job={row.original} allTags={allTags} onUpdated={onRefresh} />,
+        cell: ({ row }) => (
+          <TagCell
+            job={row.original}
+            allTags={allTags}
+            holdKey={`tags-${row.original.id}`}
+            onUpdated={onRefresh}
+          />
+        ),
       },
       {
         id: "resume",
         header: () => colHeader("resume"),
-        cell: ({ row }) => <ResumeCell job={row.original} onUpdated={onRefresh} />,
+        cell: ({ row }) => (
+          <ResumeCell
+            job={row.original}
+            busy={overlayBusy}
+            onUpdated={onRefresh}
+            onPreview={openResumePreview}
+          />
+        ),
       },
       {
         id: "jd",
         header: () => colHeader("jd"),
-        cell: ({ row }) => <JdCell job={row.original} onUpdated={onRefresh} />,
+        cell: ({ row }) => (
+          <JdCell
+            job={row.original}
+            busy={overlayBusy}
+            onViewJd={openJd}
+            onReextract={reextractJd}
+          />
+        ),
       },
       {
         accessorKey: "source_url",
         header: () => colHeader("source_url"),
         cell: ({ row }) => (
           <EditableCell
+            holdKey={`edit-${row.original.id}-url`}
             value={row.original.source_url}
             onSave={(v) => patchJob(row.original.id, { source_url: v }).then(() => onRefresh())}
           />
@@ -190,7 +318,7 @@ export function JobsTable({
       {
         id: "notes",
         header: () => colHeader("notes"),
-        cell: ({ row }) => <NotesCell job={row.original} onUpdated={onRefresh} />,
+        cell: ({ row }) => <NotesCell job={row.original} onOpenNotes={openNotes} />,
       },
       {
         id: "actions",
@@ -211,7 +339,7 @@ export function JobsTable({
           ),
       },
     ],
-    [allTags, columnSearch, columnIn, sort, onRefresh],
+    [allTags, columnSearch, columnIn, sort, onRefresh, overlayBusy],
   );
 
   const table = useReactTable({
@@ -254,7 +382,9 @@ export function JobsTable({
     </tr>
   );
 
-  if (loading) {
+  const showInitialLoader = loading && data.length === 0;
+
+  if (showInitialLoader) {
     return (
       <div className="flex h-48 items-center justify-center rounded-xl border bg-card text-sm text-muted-foreground">
         Loading job history…
@@ -263,7 +393,7 @@ export function JobsTable({
   }
 
   return (
-    <>
+    <TableInteractionContext.Provider value={interactionCtx}>
       {filterField && (
         <ColumnValueFilterDialog
           open
@@ -295,7 +425,17 @@ export function JobsTable({
           </div>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+        <div
+          className={cn(
+            "relative overflow-hidden rounded-xl border bg-card shadow-sm",
+            loading && !interactionHeld && "opacity-80",
+          )}
+        >
+          {loading && !interactionHeld ? (
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 bg-primary/10 px-3 py-1 text-center text-xs text-muted-foreground">
+              Refreshing…
+            </div>
+          ) : null}
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1200px] border-collapse text-sm">
               <thead>{headerRow(true)}</thead>
@@ -304,11 +444,10 @@ export function JobsTable({
                   {table.getRowModel().rows.map((row) => (
                     <motion.tr
                       key={row.id}
-                      layout
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -6 }}
-                      transition={{ duration: 0.18 }}
+                      initial={false}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.12 }}
                       className="border-b transition-colors hover:bg-muted/30 data-[state=selected]:bg-muted/50"
                       data-state={row.getIsSelected() ? "selected" : undefined}
                     >
@@ -325,6 +464,57 @@ export function JobsTable({
           </div>
         </div>
       )}
-    </>
+
+      <TextPreviewDialog
+        open={!!jdDialog}
+        onOpenChange={(open) => {
+          if (!open) setJdDialog(null);
+        }}
+        title={
+          jdDialog?.modelName
+            ? `Job description · ${jdDialog.modelName}`
+            : "Job description"
+        }
+        primary={jdDialog?.text}
+      />
+
+      <Dialog
+        open={!!notesDialog}
+        onOpenChange={(open) => {
+          if (!open) setNotesDialog(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Notes</DialogTitle>
+          </DialogHeader>
+          <textarea
+            className="min-h-[160px] w-full rounded-lg border bg-background p-3 text-sm"
+            value={notesDialog?.body ?? ""}
+            onChange={(e) =>
+              setNotesDialog((prev) => (prev ? { ...prev, body: e.target.value } : prev))
+            }
+            placeholder="Applied via LinkedIn, follow-up Monday…"
+          />
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" onClick={() => setNotesDialog(null)}>
+              Cancel
+            </Button>
+            <Button onClick={() => void saveNotes()} disabled={notesSaving}>
+              {notesSaving ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <TextPreviewDialog
+        open={!!resumeDialog}
+        onOpenChange={(open) => {
+          if (!open) setResumeDialog(null);
+        }}
+        title={resumeDialog?.title ?? "Resume"}
+        primary={resumeDialog?.text}
+      />
+    </TableInteractionContext.Provider>
   );
 }
