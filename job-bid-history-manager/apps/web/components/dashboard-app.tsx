@@ -14,7 +14,8 @@ import type {
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import type { RowSelectionState } from "@tanstack/react-table";
 import { motion } from "framer-motion";
-import { Moon, RefreshCw, Sun, Trash2 } from "lucide-react";
+import { Moon, Puzzle, RefreshCw, Sun, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInteractionHold } from "@/hooks/use-interaction-hold";
 import { DashboardCards } from "@/components/jbhm/dashboard-cards";
@@ -23,7 +24,6 @@ import { JobsTable } from "@/components/jbhm/jobs-table";
 import { TablePagination } from "@/components/jbhm/table-pagination";
 import { TagManagerDialog } from "@/components/jbhm/tag-manager-dialog";
 import { TimelineChart } from "@/components/jbhm/timeline-chart";
-import { ExtensionTokensPanel } from "@/components/extension-tokens-panel";
 import { Button } from "@/components/ui/button";
 import {
   bulkDeleteJobs,
@@ -210,22 +210,17 @@ export function DashboardApp() {
     <div className="min-h-screen">
       <header className="border-b bg-card/80 backdrop-blur">
         <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-6 py-4">
-          <div className="flex items-center gap-3">
-            <img
-              src="/logo.png"
-              alt=""
-              className="h-10 w-10 shrink-0 rounded-lg object-contain"
-              width={40}
-              height={40}
-            />
-            <div>
-              <h1 className="text-xl font-bold tracking-tight">Job Bid History Manager</h1>
-              <p className="text-sm text-muted-foreground">
-                Shared team board · Web · Chrome extension capture
-              </p>
-            </div>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight">Job Bid History Manager</h1>
+            <p className="text-sm text-muted-foreground">Shared team board</p>
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/dashboard/extension">
+                <Puzzle className="mr-1 h-4 w-4" />
+                Extension
+              </Link>
+            </Button>
             <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
               <RefreshCw className={`mr-1 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               Refresh
@@ -251,8 +246,6 @@ export function DashboardApp() {
             </span>
           </motion.div>
         ) : null}
-
-        <ExtensionTokensPanel />
 
         <DashboardCards summary={summary} loading={loading} />
 

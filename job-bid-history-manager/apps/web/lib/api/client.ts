@@ -204,3 +204,14 @@ export async function fetchTimeline(
   appendListFilters(q, tableHighlight);
   return request<TimelineResponse>(`/api/analytics/timeline?${q.toString()}`);
 }
+
+export type TimelineJobRow = {
+  captured_at: string;
+  captured_by: string | null;
+  company_name: string | null;
+};
+
+/** All jobs for timeline chart — bucket/range aggregation runs in the browser. */
+export async function fetchTimelineRows(): Promise<{ rows: TimelineJobRow[] }> {
+  return request<{ rows: TimelineJobRow[] }>("/api/analytics/timeline/rows");
+}

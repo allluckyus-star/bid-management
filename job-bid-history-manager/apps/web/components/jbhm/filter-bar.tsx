@@ -270,7 +270,7 @@ export function FilterBar({
 
             {filters.captured_by && (
 
-              <Badge variant="secondary">user: {filters.captured_by}</Badge>
+              <Badge variant="secondary">User: {filters.captured_by}</Badge>
 
             )}
 

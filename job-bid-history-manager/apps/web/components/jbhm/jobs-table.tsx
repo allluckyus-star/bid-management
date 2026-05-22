@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/dialog";
 import { TableInteractionContext } from "@/context/table-interaction";
 import { useHoldKey } from "@/hooks/use-interaction-hold";
-import { fetchJobJd, fetchResumePreview, patchJob, reextractJobJd } from "@/lib/api/client";
+import { fetchJobJd, fetchResumePreview, patchJob } from "@/lib/api/client";
 import {
   COLUMN_CONTROLS,
   cycleColumnSort,
@@ -112,23 +112,6 @@ export function JobsTable({
       });
     } catch (e) {
       alert(e instanceof Error ? e.message : "Failed to load JD");
-    } finally {
-      setOverlayBusy(false);
-    }
-  };
-
-  const reextractJd = async (job: JobListItem) => {
-    setOverlayBusy(true);
-    try {
-      const res = await reextractJobJd(job.id);
-      setJdDialog({
-        text: res.jd.cleaned_text,
-        modelName: res.jd.model_name,
-      });
-      onRefresh();
-      alert("Re-extraction complete. Structured fields updated.");
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Re-extract failed (is Ollama running?)");
     } finally {
       setOverlayBusy(false);
     }
@@ -296,12 +279,7 @@ export function JobsTable({
         id: "jd",
         header: () => colHeader("jd"),
         cell: ({ row }) => (
-          <JdCell
-            job={row.original}
-            busy={overlayBusy}
-            onViewJd={openJd}
-            onReextract={reextractJd}
-          />
+          <JdCell job={row.original} busy={overlayBusy} onViewJd={openJd} />
         ),
       },
       {

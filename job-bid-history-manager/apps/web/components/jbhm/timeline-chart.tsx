@@ -2,7 +2,8 @@ import type { TimelineBucketKey } from "@jbhm/shared";
 import ReactECharts from "echarts-for-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { fetchTimeline } from "@/lib/api/client";
+import { fetchTimelineRows } from "@/lib/api/client";
+import { buildTimelineFromRows } from "@/lib/analytics/build-timeline";
 import {
   colorForUser,
   sortedUserNames,
@@ -655,16 +656,17 @@ type Props = {
 
 export function TimelineChart({ dark = false, refreshToken = 0, fetchEnabled = true }: Props) {
   const [bucket, setBucket] = useState<TimelineBucketKey>("1d");
-  const [data, setData] = useState<Awaited<ReturnType<typeof fetchTimeline>> | null>(null);
+  const [data, setData] = useState<ReturnType<typeof buildTimelineFromRows> | null>(null);
   const [pinnedZoom, setPinnedZoom] = useState<ZoomRange | null>(null);
   const [labelRefresh, setLabelRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [panLoading, setPanLoading] = useState(false);
+  const [rowsReady, setRowsReady] = useState(false);
   const chartRef = useRef<InstanceType<typeof ReactECharts> | null>(null);
   const wheelCleanupRef = useRef<(() => void) | null>(null);
   const wheelDispatchRef = useRef(false);
   const loadGenRef = useRef(0);
   const bucketLoadRef = useRef(0);
+  const rawRowsRef = useRef<Awaited<ReturnType<typeof fetchTimelineRows>>["rows"]>([]);
   const historyBoundsRef = useRef<HistoryBounds>({ minMs: null, maxMs: null });
   const pendingEdgeRef = useRef<"older" | "newer" | null>(null);
   const isPanShiftRef = useRef(false);
@@ -727,15 +729,18 @@ export function TimelineChart({ dark = false, refreshToken = 0, fetchEnabled = t
     preserveVisible?: { startMs: number; endMs: number };
   };
 
-  const load = useCallback(async (bucketKey: TimelineBucketKey, opts: LoadOpts = {}) => {
-    const { resetView = false, range, zoomAfter, panShift = false, preserveVisible } = opts;
+  const applyTimeline = useCallback((bucketKey: TimelineBucketKey, opts: LoadOpts = {}) => {
+    const { resetView = false, range, zoomAfter, preserveVisible } = opts;
     const gen = ++loadGenRef.current;
-    if (resetView) setLoading(true);
-    else if (panShift) setPanLoading(true);
     try {
       const effectiveRange =
         range ?? initialRange(bucketKey, historyBoundsRef.current);
-      const res = await fetchTimeline(bucketKey, effectiveRange);
+      const res = buildTimelineFromRows(
+        rawRowsRef.current,
+        bucketKey,
+        effectiveRange.start,
+        effectiveRange.end,
+      );
       if (gen !== loadGenRef.current) return;
 
       historyBoundsRef.current = parseHistoryBounds(res.history_start, res.history_end);
@@ -763,18 +768,65 @@ export function TimelineChart({ dark = false, refreshToken = 0, fetchEnabled = t
       if (gen === loadGenRef.current) setData(null);
     } finally {
       if (gen === loadGenRef.current) {
-        if (resetView) setLoading(false);
-        if (panShift) setPanLoading(false);
         isPanShiftRef.current = false;
       }
     }
   }, []);
 
+  const loadRawRows = useCallback(async () => {
+    const gen = ++loadGenRef.current;
+    setLoading(true);
+    try {
+      const { rows } = await fetchTimelineRows();
+      if (gen !== loadGenRef.current) return;
+      rawRowsRef.current = rows;
+      setRowsReady(true);
+    } catch {
+      if (gen === loadGenRef.current) {
+        rawRowsRef.current = [];
+        setRowsReady(false);
+        setData(null);
+      }
+    } finally {
+      if (gen === loadGenRef.current) setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!fetchEnabled) return;
+    void loadRawRows();
+  }, [fetchEnabled, loadRawRows]);
+
+  useEffect(() => {
+    if (!fetchEnabled || refreshToken <= 0 || !rowsReady) return;
+    const gen = ++loadGenRef.current;
+    void (async () => {
+      try {
+        const { rows } = await fetchTimelineRows();
+        if (gen !== loadGenRef.current) return;
+        rawRowsRef.current = rows;
+        const d = dataRef.current;
+        const b = bucketRef.current;
+        if (d) {
+          applyTimeline(b, { range: { start: d.start, end: d.end } });
+        } else {
+          applyTimeline(b, {
+            resetView: true,
+            range: initialRange(b, historyBoundsRef.current),
+          });
+        }
+      } catch {
+        /* keep previous chart */
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshToken only
+  }, [refreshToken, fetchEnabled, rowsReady, applyTimeline]);
+
+  useEffect(() => {
+    if (!fetchEnabled || !rowsReady) return;
     pendingEdgeRef.current = null;
     const token = ++bucketLoadRef.current;
-    void load(bucket, {
+    applyTimeline(bucket, {
       resetView: true,
       range: initialRange(bucket, historyBoundsRef.current),
     });
@@ -782,15 +834,7 @@ export function TimelineChart({ dark = false, refreshToken = 0, fetchEnabled = t
       bucketLoadRef.current = token + 1;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- bucket switch only
-  }, [bucket, load, fetchEnabled]);
-
-  useEffect(() => {
-    if (!fetchEnabled || refreshToken <= 0 || !data) return;
-    void load(bucket, {
-      range: { start: data.start, end: data.end },
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshToken only
-  }, [refreshToken, fetchEnabled]);
+  }, [bucket, rowsReady, applyTimeline, fetchEnabled]);
 
   const chartKey = useMemo(
     () =>
@@ -1009,13 +1053,13 @@ export function TimelineChart({ dark = false, refreshToken = 0, fetchEnabled = t
         bounds,
       );
 
-      void load(b, {
+      applyTimeline(b, {
         panShift: true,
         range,
         preserveVisible,
       });
     },
-    [load],
+    [applyTimeline],
   );
 
   useEffect(() => {
@@ -1096,11 +1140,6 @@ export function TimelineChart({ dark = false, refreshToken = 0, fetchEnabled = t
       </div>
 
       <div className="relative">
-        {panLoading && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-background/40 text-xs text-muted-foreground">
-            Loading more…
-          </div>
-        )}
         {loading ? (
           <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">
             Loading chart…

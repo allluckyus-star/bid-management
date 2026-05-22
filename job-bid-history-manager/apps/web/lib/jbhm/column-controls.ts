@@ -26,8 +26,8 @@ export const COLUMN_CONTROLS: Record<JobSortField, ColumnControlConfig> = {
 };
 
 export const COLUMN_LABELS: Record<JobSortField, string> = {
-  captured_at: "Captured Date",
-  captured_by: "Captured By",
+  captured_at: "Date",
+  captured_by: "User",
   company_name: "Company",
   job_title: "Job Title",
   location: "Location",
