@@ -56,6 +56,11 @@ import {
 } from "@/lib/jbhm/column-controls";
 import { cn, formatDate } from "@/lib/utils";
 
+type ColumnMeta = { align?: "center" | "left" };
+
+const centeredCell = "text-center";
+const centeredWrap = "flex justify-center";
+
 type Props = {
   data: JobListItem[];
   allTags: Tag[];
@@ -207,15 +212,18 @@ export function JobsTable({
     () => [
       {
         id: "select",
+        meta: { align: "center" } satisfies ColumnMeta,
         header: () => null,
         cell: ({ row }) => (
-          <Checkbox
-            checked={row.getIsSelected()}
-            onCheckedChange={(value: boolean | "indeterminate") =>
-              row.toggleSelected(!!value)
-            }
-            aria-label="Select row"
-          />
+          <div className={centeredWrap}>
+            <Checkbox
+              checked={row.getIsSelected()}
+              onCheckedChange={(value: boolean | "indeterminate") =>
+                row.toggleSelected(!!value)
+              }
+              aria-label="Select row"
+            />
+          </div>
         ),
         size: 40,
       },
@@ -281,33 +289,42 @@ export function JobsTable({
       },
       {
         id: "tags",
+        meta: { align: "center" } satisfies ColumnMeta,
         header: () => colHeader("tags"),
         cell: ({ row }) => (
-          <TagCell
-            job={row.original}
-            allTags={allTags}
-            holdKey={`tags-${row.original.id}`}
-            onUpdated={onRefresh}
-          />
+          <div className={centeredWrap}>
+            <TagCell
+              job={row.original}
+              allTags={allTags}
+              holdKey={`tags-${row.original.id}`}
+              onUpdated={onRefresh}
+            />
+          </div>
         ),
       },
       {
         id: "resume",
+        meta: { align: "center" } satisfies ColumnMeta,
         header: () => colHeader("resume"),
         cell: ({ row }) => (
-          <ResumeCell
-            job={row.original}
-            busy={overlayBusy}
-            onUpdated={onRefresh}
-            onPreview={openResumePreview}
-          />
+          <div className={centeredWrap}>
+            <ResumeCell
+              job={row.original}
+              busy={overlayBusy}
+              onUpdated={onRefresh}
+              onPreview={openResumePreview}
+            />
+          </div>
         ),
       },
       {
         id: "jd",
+        meta: { align: "center" } satisfies ColumnMeta,
         header: () => colHeader("jd"),
         cell: ({ row }) => (
-          <JdCell job={row.original} busy={overlayBusy} onViewJd={openJd} />
+          <div className={centeredWrap}>
+            <JdCell job={row.original} busy={overlayBusy} onViewJd={openJd} />
+          </div>
         ),
       },
       {
@@ -323,26 +340,35 @@ export function JobsTable({
       },
       {
         id: "notes",
+        meta: { align: "center" } satisfies ColumnMeta,
         header: () => colHeader("notes"),
-        cell: ({ row }) => <NotesCell job={row.original} onOpenNotes={openNotes} />,
+        cell: ({ row }) => (
+          <div className={centeredWrap}>
+            <NotesCell job={row.original} onOpenNotes={openNotes} />
+          </div>
+        ),
       },
       {
         id: "actions",
+        meta: { align: "center" } satisfies ColumnMeta,
         header: () => <TableColumnHeader label="Actions" />,
-        cell: ({ row }) =>
-          row.original.source_url ? (
-            <a
-              href={row.original.source_url}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-            >
-              <ExternalLink className="h-3 w-3" />
-              Open
-            </a>
-          ) : (
-            "—"
-          ),
+        cell: ({ row }) => (
+          <div className={centeredWrap}>
+            {row.original.source_url ? (
+              <a
+                href={row.original.source_url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Open
+              </a>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </div>
+        ),
       },
     ],
     [allTags, columnSearch, columnIn, sort, onRefresh, overlayBusy],
@@ -363,9 +389,9 @@ export function JobsTable({
 
   const headerRow = (showSelectAll: boolean) => (
     <tr className="border-b bg-muted/40">
-      <th className="w-10 px-3 py-2 align-bottom">
+      <th className="w-10 px-3 py-2 align-bottom text-center">
         {showSelectAll && (
-          <div className="flex h-[52px] items-end pb-1">
+          <div className="flex h-[52px] items-end justify-center pb-1">
             <Checkbox
               checked={
                 table.getIsAllPageRowsSelected() ||
@@ -383,7 +409,7 @@ export function JobsTable({
         .getHeaderGroups()[0]
         ?.headers.slice(1)
         .map((header) => (
-          <th key={header.id} className="px-3 py-2 align-top">
+          <th key={header.id} className="px-3 py-2 align-top text-center">
             {flexRender(header.column.columnDef.header, header.getContext())}
           </th>
         ))}
@@ -459,11 +485,20 @@ export function JobsTable({
                       className="border-b transition-colors hover:bg-muted/30 data-[state=selected]:bg-muted/50"
                       data-state={row.getIsSelected() ? "selected" : undefined}
                     >
-                      {row.getVisibleCells().map((cell) => (
-                        <td key={cell.id} className="px-3 py-2.5 align-middle">
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </td>
-                      ))}
+                      {row.getVisibleCells().map((cell) => {
+                        const meta = cell.column.columnDef.meta as ColumnMeta | undefined;
+                        return (
+                          <td
+                            key={cell.id}
+                            className={cn(
+                              "px-3 py-2.5 align-middle",
+                              meta?.align === "center" && centeredCell,
+                            )}
+                          >
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        );
+                      })}
                     </motion.tr>
                   ))}
                 </AnimatePresence>

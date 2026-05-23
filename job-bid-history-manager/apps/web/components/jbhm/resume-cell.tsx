@@ -47,7 +47,7 @@ export function ResumeCell({ job, busy, onUpdated, onPreview }: Props) {
 
   if (!job.resume) {
     return (
-      <>
+      <div className="flex flex-col items-center gap-1">
         <input
           ref={inputRef}
           type="file"
@@ -64,12 +64,12 @@ export function ResumeCell({ job, busy, onUpdated, onPreview }: Props) {
         >
           Attach Resume
         </Button>
-      </>
+      </div>
     );
   }
 
   return (
-    <>
+    <div className="flex flex-col items-center gap-1">
       <input
         ref={inputRef}
         type="file"
@@ -77,9 +77,10 @@ export function ResumeCell({ job, busy, onUpdated, onPreview }: Props) {
         className="hidden"
         onChange={(e) => void handleFile(e.target.files?.[0])}
       />
-      <div className="flex flex-col gap-1">
-        <span className="text-xs font-medium">{truncate(job.resume.original_filename, 22)}</span>
-        <div className="flex flex-wrap gap-1">
+      <span className="text-center text-xs font-medium">
+        {truncate(job.resume.original_filename, 22)}
+      </span>
+      <div className="flex flex-wrap justify-center gap-1">
           <Button
             variant="outline"
             size="sm"
@@ -101,7 +102,6 @@ export function ResumeCell({ job, busy, onUpdated, onPreview }: Props) {
             Unlink
           </Button>
         </div>
-      </div>
-    </>
+    </div>
   );
 }

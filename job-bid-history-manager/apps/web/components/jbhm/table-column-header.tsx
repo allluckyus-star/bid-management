@@ -39,11 +39,11 @@ export function TableColumnHeader({
         : "Sort ascending (click)";
 
   return (
-    <div className="flex min-w-[100px] flex-col gap-1">
+    <div className="flex min-w-[100px] flex-col items-center gap-1 text-center">
       <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {title}
       </span>
-      <div className="flex items-center gap-0.5">
+      <div className="flex items-center justify-center gap-0.5">
         {cfg?.sort && onSortClick && (
           <button
             type="button"

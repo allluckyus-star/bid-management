@@ -1,7 +1,7 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { JobFilters, TimelineBucketKey } from "@jbhm/shared";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { JobFilters, TimelineBucketKey, TimelineResponse } from "@jbhm/shared";
 import {
   fetchCapturedByUsers,
   fetchDashboard,
@@ -65,12 +65,13 @@ export function useTimelineQuery(
   range: { start: string; end: string } | null,
   listContext?: JobFilters,
 ) {
-  return useQuery({
+  return useQuery<TimelineResponse>({
     queryKey: [...dashboardKeys.timeline(bucket, range?.start, range?.end), listContext] as const,
     queryFn: () => fetchTimeline(bucket, range!, listContext),
     enabled: !!range,
     staleTime: STALE.timeline,
     refetchOnWindowFocus: false,
+    placeholderData: keepPreviousData,
   });
 }
 

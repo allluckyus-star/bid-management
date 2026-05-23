@@ -656,6 +656,7 @@ function filledBarStyle(color: string): BarItemStyle {
 
 export type TimelineChartProps = {
   dark?: boolean;
+  bucket: TimelineBucketKey;
   data: TimelineResponse | null;
   loading: boolean;
   error: string | null;
@@ -672,13 +673,13 @@ export type TimelineChartProps = {
 
 export function TimelineChart({
   dark = false,
+  bucket,
   data,
   loading,
   error,
   onRetry,
   onRequestRange,
 }: TimelineChartProps) {
-  const [bucket, setBucket] = useState<TimelineBucketKey>("1d");
   const [pinnedZoom, setPinnedZoom] = useState<ZoomRange | null>(null);
   const [labelRefresh, setLabelRefresh] = useState(0);
   const chartRef = useRef<{ getEchartsInstance: () => EChartsType } | null>(null);
@@ -767,13 +768,6 @@ export function TimelineChart({
     },
     [],
   );
-
-  useEffect(() => {
-    pendingEdgeRef.current = null;
-    pendingResetRef.current = true;
-    onRequestRange(bucket, initialRange(bucket, historyBoundsRef.current), { resetView: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- bucket switch
-  }, [bucket]);
 
   useEffect(() => {
     if (!data?.series.length) return;
@@ -1077,14 +1071,12 @@ export function TimelineChart({
               variant={bucket === b.key ? "default" : "outline"}
               className="h-7 text-xs"
               onClick={() => {
-                if (b.key === bucket) {
-                  pendingResetRef.current = true;
-                  onRequestRange(
-                    b.key,
-                    initialRange(b.key, historyBoundsRef.current),
-                  );
-                }
-                setBucket(b.key);
+                pendingResetRef.current = true;
+                onRequestRange(
+                  b.key,
+                  initialRange(b.key, historyBoundsRef.current),
+                  { resetView: true },
+                );
               }}
             >
               {b.label}

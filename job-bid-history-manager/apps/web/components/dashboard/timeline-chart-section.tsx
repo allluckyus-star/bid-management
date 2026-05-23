@@ -2,7 +2,7 @@
 
 import type { TimelineBucketKey } from "@jbhm/shared";
 import dynamic from "next/dynamic";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ChartSkeleton } from "@/components/dashboard/chart-skeleton";
 import { useDashboardFilters } from "@/components/dashboard/dashboard-filters-context";
 import { useTimelineQuery } from "@/hooks/use-dashboard-queries";
@@ -21,13 +21,15 @@ type Props = {
 };
 
 const DEFAULT_BUCKET: TimelineBucketKey = "1d";
+const EMPTY_BOUNDS = { minMs: null, maxMs: null } as const;
 
 export function TimelineChartSection({ dark }: Props) {
   const { listContext } = useDashboardFilters();
-  const [bucket, setBucket] = useState<TimelineBucketKey>(DEFAULT_BUCKET);
-  const [range, setRange] = useState<{ start: string; end: string }>(() =>
-    initialRange(DEFAULT_BUCKET, { minMs: null, maxMs: null }),
+  const initialRangeRef = useRef(
+    initialRange(DEFAULT_BUCKET, EMPTY_BOUNDS),
   );
+  const [bucket, setBucket] = useState<TimelineBucketKey>(DEFAULT_BUCKET);
+  const [range, setRange] = useState(initialRangeRef.current);
 
   const timeline = useTimelineQuery(bucket, range, listContext);
 
@@ -35,18 +37,19 @@ export function TimelineChartSection({ dark }: Props) {
     (b: TimelineBucketKey, r: { start: string; end: string }) => {
       setBucket(b);
       setRange((prev) =>
-        prev?.start === r.start && prev?.end === r.end ? prev : r,
+        prev.start === r.start && prev.end === r.end ? prev : r,
       );
     },
     [],
   );
 
-  const chartLoading =
-    timeline.isPending || timeline.isLoading || timeline.isFetching;
+  /** Only block UI on first load; refetches keep previous chart data (see keepPreviousData). */
+  const chartLoading = timeline.isPending;
 
   return (
     <TimelineChart
       dark={dark}
+      bucket={bucket}
       data={timeline.data ?? null}
       loading={chartLoading}
       error={

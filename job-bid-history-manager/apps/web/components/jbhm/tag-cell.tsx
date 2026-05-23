@@ -61,7 +61,7 @@ export function TagCell({ job, allTags, holdKey, onUpdated }: Props) {
     allTags.filter((t) => names.has(t.name.toLowerCase()));
 
   return (
-    <div className="relative flex max-w-[220px] flex-wrap items-center gap-1">
+    <div className="relative mx-auto flex max-w-[220px] flex-wrap items-center justify-center gap-1">
       {job.tags.map((tag) => (
         <Badge
           key={tag.id}

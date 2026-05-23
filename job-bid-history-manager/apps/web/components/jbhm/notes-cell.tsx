@@ -10,7 +10,7 @@ export function NotesCell({ job, onOpenNotes }: Props) {
   return (
     <button
       type="button"
-      className="max-w-[140px] truncate text-left text-xs text-muted-foreground hover:text-foreground hover:underline"
+      className="max-w-[140px] truncate text-center text-xs text-muted-foreground hover:text-foreground hover:underline"
       onClick={() => onOpenNotes(job)}
     >
       {job.notes_preview ? truncate(job.notes_preview, 40) : "Add notes…"}
