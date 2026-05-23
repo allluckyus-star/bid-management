@@ -116,21 +116,45 @@ export function JobsTableSection({ interactionHeld, setInteractionHold }: Props)
 
   const selectedIds = Object.keys(rowSelection).filter((id) => rowSelection[id]);
 
+  const runDelete = async (jobIds: string[]) => {
+    if (!jobIds.length) return;
+    const res = await bulkDeleteJobs(jobIds);
+    if (res.deleted_count === 0) {
+      throw new Error("No rows were deleted. You may need to sign in again.");
+    }
+    setRowSelection((prev) => {
+      const next = { ...prev };
+      for (const id of jobIds) delete next[id];
+      return next;
+    });
+    await invalidate.jobs();
+    await invalidate.summary();
+    await invalidate.timeline();
+    return res.deleted_count;
+  };
+
   const handleBulkDelete = async () => {
     if (!selectedIds.length) return;
-    if (!confirm(`Soft-delete ${selectedIds.length} selected job(s)?`)) return;
+    if (!confirm(`Delete ${selectedIds.length} selected job(s)?`)) return;
     setDeleting(true);
     try {
-      await bulkDeleteJobs(selectedIds);
-      notifyActionSuccess(
-        `Deleted ${selectedIds.length} job${selectedIds.length === 1 ? "" : "s"}`,
-      );
-      setRowSelection({});
-      await invalidate.jobs();
-      await invalidate.summary();
-      await invalidate.timeline();
+      const n = await runDelete(selectedIds);
+      notifyActionSuccess(`Deleted ${n} job${n === 1 ? "" : "s"}`);
     } catch (err) {
-      notifyLoadError(err instanceof Error ? err.message : "Bulk delete failed");
+      notifyLoadError(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteOne = async (jobId: string) => {
+    if (!confirm("Delete this job?")) return;
+    setDeleting(true);
+    try {
+      const n = await runDelete([jobId]);
+      notifyActionSuccess(`Deleted ${n} job`);
+    } catch (err) {
+      notifyLoadError(err instanceof Error ? err.message : "Delete failed");
     } finally {
       setDeleting(false);
     }
@@ -143,6 +167,12 @@ export function JobsTableSection({ interactionHeld, setInteractionHold }: Props)
           Page {filters.page ?? 1}: {jobs.length} rows · {total} total
           {selectedIds.length > 0 && ` · ${selectedIds.length} selected`}
           {jobsQuery.isFetching && !jobsQuery.isLoading ? " · updating…" : ""}
+          {selectedIds.length === 0 && (
+            <span className="text-muted-foreground/80">
+              {" "}
+              · Select rows (left checkbox) or use Delete on a row
+            </span>
+          )}
         </span>
         <Button
           variant="destructive"
@@ -168,6 +198,8 @@ export function JobsTableSection({ interactionHeld, setInteractionHold }: Props)
         onColumnInChange={handleColumnInChange}
         onSortChange={handleSortChange}
         onRowSelectionChange={setRowSelection}
+        onDeleteJob={handleDeleteOne}
+        deleteBusy={deleting}
         onRefresh={() => {
           void invalidate.jobs();
           void invalidate.summary();

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { createAdminClient, hasServiceRoleKey } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export async function DELETE(request: Request) {
@@ -11,6 +12,13 @@ export async function DELETE(request: Request) {
 
   if (authError || !user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!hasServiceRoleKey()) {
+    return NextResponse.json(
+      { error: "Server missing SUPABASE_SERVICE_ROLE_KEY (required for delete)" },
+      503,
+    );
   }
 
   let job_ids: string[] = [];
@@ -26,7 +34,8 @@ export async function DELETE(request: Request) {
   }
 
   const now = new Date().toISOString();
-  const { data, error } = await supabase
+  const admin = createAdminClient();
+  const { data, error } = await admin
     .from("jobs")
     .update({ deleted_at: now, updated_at: now })
     .in("id", job_ids)

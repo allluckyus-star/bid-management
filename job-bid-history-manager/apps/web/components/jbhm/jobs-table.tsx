@@ -16,7 +16,7 @@ import type {
   Tag,
 } from "@jbhm/shared";
 import { AnimatePresence, motion } from "framer-motion";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Trash2 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import { ColumnSearchDialog } from "@/components/jbhm/column-search-dialog";
@@ -74,6 +74,8 @@ type Props = {
   onColumnInChange: (field: JobFilterableField, values: string[] | undefined) => void;
   onSortChange: (sort: JobSortEntry[]) => void;
   onRowSelectionChange: (state: RowSelectionState) => void;
+  onDeleteJob: (jobId: string) => void;
+  deleteBusy?: boolean;
   onRefresh: () => void;
   setInteractionHold: (key: string, active: boolean) => void;
   interactionHeld: boolean;
@@ -92,6 +94,8 @@ export function JobsTable({
   onColumnInChange,
   onSortChange,
   onRowSelectionChange,
+  onDeleteJob,
+  deleteBusy = false,
   onRefresh,
   setInteractionHold,
   interactionHeld,
@@ -213,7 +217,9 @@ export function JobsTable({
       {
         id: "select",
         meta: { align: "center" } satisfies ColumnMeta,
-        header: () => null,
+        header: () => (
+          <span className="sr-only">Select</span>
+        ),
         cell: ({ row }) => (
           <div className={centeredWrap}>
             <Checkbox
@@ -353,7 +359,7 @@ export function JobsTable({
         meta: { align: "center" } satisfies ColumnMeta,
         header: () => <TableColumnHeader label="Actions" />,
         cell: ({ row }) => (
-          <div className={centeredWrap}>
+          <div className={cn(centeredWrap, "gap-2")}>
             {row.original.source_url ? (
               <a
                 href={row.original.source_url}
@@ -364,14 +370,24 @@ export function JobsTable({
                 <ExternalLink className="h-3 w-3" />
                 Open
               </a>
-            ) : (
-              <span className="text-muted-foreground">—</span>
-            )}
+            ) : null}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+              disabled={deleteBusy}
+              onClick={() => onDeleteJob(row.original.id)}
+              aria-label="Delete job"
+              title="Delete job"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
           </div>
         ),
       },
     ],
-    [allTags, columnSearch, columnIn, sort, onRefresh, overlayBusy],
+    [allTags, columnSearch, columnIn, sort, onRefresh, overlayBusy, onDeleteJob, deleteBusy],
   );
 
   const table = useReactTable({

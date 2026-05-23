@@ -65,7 +65,7 @@ create policy "jobs_team_insert"
 
 create policy "jobs_team_update"
   on public.jobs for update to authenticated
-  using (true)
+  using (deleted_at is null)
   with check (true);
 
 create policy "jobs_team_delete"
