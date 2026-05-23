@@ -2,6 +2,7 @@ import type { TimelineBucketKey } from "@jbhm/shared";
 import type { EChartsType } from "echarts";
 import ReactECharts from "echarts-for-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { TimelineResponse } from "@jbhm/shared";
 import {
@@ -21,6 +22,7 @@ import {
   type HistoryBounds,
   type ZoomRange,
 } from "@/lib/jbhm/timeline-window";
+import { cn } from "@/lib/utils";
 
 const BUCKETS: { key: TimelineBucketKey; label: string }[] = [
   { key: "5m", label: "5m" },
@@ -186,13 +188,13 @@ const MAX_VISIBLE_IN_VIEW: Record<TimelineBucketKey, number> = {
   "1h": 40,
 };
 
-/** Bars visible on first load, centered on now */
+/** Bars visible on first load: “now” in view with bucket-specific future buckets to the right. */
 const INITIAL_VIEW: Record<TimelineBucketKey, { before: number; after: number }> = {
-  "5m": { before: 12, after: 12 },
-  "30m": { before: 10, after: 10 },
+  "5m": { before: 18, after: 6 },
+  "30m": { before: 8, after: 6 },
+  "1h": { before: 6, after: 5 },
+  "1d": { before: 10, after: 2 },
   "1month": { before: 1, after: 1 },
-  "1d": { before: 10, after: 10 },
-  "1h": { before: 8, after: 8 },
 };
 
 function maxZoomSpanPercent(categoryCount: number, bucketKey: TimelineBucketKey): number {
@@ -688,16 +690,21 @@ export function TimelineChart({
   const bucketLoadRef = useRef(0);
   const historyBoundsRef = useRef<HistoryBounds>({ minMs: null, maxMs: null });
   const pendingResetRef = useRef(true);
+  const rangeAlignedRef = useRef(false);
+  const loadedWindowKeyRef = useRef<string | null>(null);
   const pendingEdgeRef = useRef<"older" | "newer" | null>(null);
   const isPanShiftRef = useRef(false);
   const dataRef = useRef(data);
   const bucketRef = useRef(bucket);
+  const loadingRef = useRef(loading);
   dataRef.current = data;
   bucketRef.current = bucket;
+  loadingRef.current = loading;
 
   const bindChartWheel = useCallback((chart: EChartsType) => {
     const zr = chart.getZr();
     const handler = (ev: { event?: WheelEvent; stop?: () => void }) => {
+      if (loadingRef.current) return;
       const e = ev.event;
       if (!e) return;
       const cats = dataRef.current?.series[0]?.buckets.length ?? 0;
@@ -769,9 +776,29 @@ export function TimelineChart({
     [],
   );
 
+  /** Match Day-button load: same range + bounds as clicking Day after first response. */
+  useEffect(() => {
+    if (!data || rangeAlignedRef.current) return;
+    rangeAlignedRef.current = true;
+    const bounds = parseHistoryBounds(data.history_start, data.history_end);
+    historyBoundsRef.current = bounds;
+    pendingResetRef.current = true;
+    onRequestRange(bucket, initialRange(bucket, bounds), { resetView: true });
+  }, [data, bucket, onRequestRange]);
+
+  useEffect(() => {
+    setPinnedZoom(null);
+    pendingResetRef.current = true;
+    loadedWindowKeyRef.current = null;
+  }, [bucket]);
+
   useEffect(() => {
     if (!data?.series.length) return;
-    syncZoomFromData(data, bucket, { resetView: pendingResetRef.current });
+    const windowKey = `${bucket}|${data.start}|${data.end}`;
+    const shouldReset =
+      pendingResetRef.current || loadedWindowKeyRef.current !== windowKey;
+    loadedWindowKeyRef.current = windowKey;
+    syncZoomFromData(data, bucket, { resetView: shouldReset });
     pendingResetRef.current = false;
   }, [data, bucket, syncZoomFromData]);
 
@@ -792,7 +819,11 @@ export function TimelineChart({
       return {};
     }
 
-    if (!data.series.length) {
+    const categories =
+      data.series[0]?.buckets.map((b) => b.bucket_start) ??
+      [];
+
+    if (!categories.length) {
       return {
         title: {
           text: "No bids recorded yet",
@@ -802,22 +833,26 @@ export function TimelineChart({
         },
       };
     }
-
-    const categories = data.series[0].buckets.map((b) => b.bucket_start);
     const isHeavy = categories.length >= HEAVY_CATEGORY_COUNT;
     labelState.categories = categories;
     labelState.majorIndices = computeMajorLabelIndices(categories.length);
-    // labelState.zoom updated by datazoom handler (not React state — avoids fighting the slider)
 
-    const visibleCount = visibleBucketWindow(categories.length, labelState.zoom).visibleCount;
+    const zoomForView =
+      pinnedZoom ??
+      (categories.length > 1 ? initialZoomAroundNow(categories, bucket) : FULL_ZOOM);
+    labelState.zoom = zoomForView;
+
+    const visibleCount = visibleBucketWindow(categories.length, zoomForView).visibleCount;
     const barMaxWidth = visibleCount > 72 ? 10 : visibleCount > 40 ? 16 : 28;
 
-    const nowIdx = findNowBucketIndex(categories, bucket);
-    const { startIdx, endIdx } = visibleBucketWindow(categories.length, labelState.zoom);
+    let nowIdx = findNowBucketIndex(categories, bucket);
+    if (nowIdx < 0) nowIdx = findNearestBucketIndex(categories, bucket);
+    const { startIdx, endIdx } = visibleBucketWindow(categories.length, zoomForView);
     const nowInLoadedRange = nowIdx >= 0;
     const nowCategory = nowInLoadedRange ? categories[nowIdx] : undefined;
-    const nowVisible = nowInLoadedRange && nowIdx >= startIdx && nowIdx < endIdx;
-    const stackMax = maxVisibleStackedBids(data.series, labelState.zoom);
+    const nowVisible =
+      nowInLoadedRange && nowIdx >= startIdx && nowIdx < endIdx;
+    const stackMax = maxVisibleStackedBids(data.series, zoomForView);
     const yMax = yAxisMaxWithNowHeadroom(stackMax);
 
     const barSeriesBase = {
@@ -870,7 +905,7 @@ export function TimelineChart({
 
     const maxSpan = maxZoomSpanPercent(categories.length, bucket);
 
-    const activeZoom = pinnedZoom ?? labelState.zoom;
+    const activeZoom = zoomForView;
     const dataZoomCommon = {
       xAxisIndex: 0,
       filterMode: "none" as const,
@@ -1057,8 +1092,17 @@ export function TimelineChart({
     setPinnedZoom(labelState.zoom);
   }, [chartKey, data?.series.length]);
 
+  const showChart = !error && data != null;
+  const blockInteraction = loading;
+
   return (
-    <div className="mb-4 rounded-xl border bg-card/50 p-4">
+    <div
+      className={cn(
+        "mb-4 rounded-xl border bg-card/50 p-4",
+        blockInteraction && "select-none",
+      )}
+      aria-busy={blockInteraction}
+    >
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold">Bid timeline</h3>
@@ -1070,6 +1114,7 @@ export function TimelineChart({
               size="sm"
               variant={bucket === b.key ? "default" : "outline"}
               className="h-7 text-xs"
+              disabled={blockInteraction}
               onClick={() => {
                 pendingResetRef.current = true;
                 onRequestRange(
@@ -1085,31 +1130,53 @@ export function TimelineChart({
         </div>
       </div>
 
-      <div className="relative">
+      <div
+        className={cn(
+          "relative h-[348px] overflow-hidden",
+          blockInteraction && "touch-none overscroll-none",
+        )}
+      >
         {error ? (
-          <div className="flex h-[280px] flex-col items-center justify-center gap-3 text-sm">
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-sm">
             <p className="text-destructive">{error}</p>
             <Button type="button" size="sm" variant="outline" onClick={onRetry}>
               Retry chart
             </Button>
           </div>
-        ) : loading || !data ? (
-          <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">
-            Loading chart…
+        ) : showChart ? (
+          <div className={cn("h-full w-full", blockInteraction && "pointer-events-none")}>
+            <ReactECharts
+              ref={chartRef}
+              key={chartKey}
+              option={option}
+              style={{ height: 348 }}
+              notMerge={false}
+              lazyUpdate={false}
+              replaceMerge={["series", "legend", "dataZoom", "grid"]}
+              onEvents={blockInteraction ? undefined : onEvents}
+              onChartReady={(instance) => {
+                if (!loadingRef.current) setupChartWheel(instance);
+              }}
+            />
           </div>
         ) : (
-          <ReactECharts
-            ref={chartRef}
-            key={chartKey}
-            option={option}
-            style={{ height: 348 }}
-            notMerge={false}
-            lazyUpdate={false}
-            replaceMerge={["series", "legend", "dataZoom", "grid"]}
-            onEvents={onEvents}
-            onChartReady={(instance) => setupChartWheel(instance)}
-          />
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+            Loading chart…
+          </div>
         )}
+        {blockInteraction && !error ? (
+          <div
+            className="absolute inset-0 z-20 flex cursor-wait flex-col items-center justify-center gap-2 bg-background/75 backdrop-blur-[2px] touch-none overscroll-none"
+            role="status"
+            aria-live="polite"
+            aria-label="Loading chart"
+            onWheel={(e) => e.preventDefault()}
+            onTouchMove={(e) => e.preventDefault()}
+          >
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Loading chart…</span>
+          </div>
+        ) : null}
       </div>
       <p className="mt-2 text-center text-[10px] text-muted-foreground">
         Hover bars for bucket details · Scroll to pan · Ctrl+scroll to zoom · Drag time bar to select range

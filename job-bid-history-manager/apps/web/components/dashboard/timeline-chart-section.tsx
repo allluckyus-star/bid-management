@@ -2,7 +2,7 @@
 
 import type { TimelineBucketKey } from "@jbhm/shared";
 import dynamic from "next/dynamic";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { ChartSkeleton } from "@/components/dashboard/chart-skeleton";
 import { useDashboardFilters } from "@/components/dashboard/dashboard-filters-context";
 import { useTimelineQuery } from "@/hooks/use-dashboard-queries";
@@ -25,11 +25,10 @@ const EMPTY_BOUNDS = { minMs: null, maxMs: null } as const;
 
 export function TimelineChartSection({ dark }: Props) {
   const { listContext } = useDashboardFilters();
-  const initialRangeRef = useRef(
+  const [bucket, setBucket] = useState<TimelineBucketKey>(DEFAULT_BUCKET);
+  const [range, setRange] = useState(() =>
     initialRange(DEFAULT_BUCKET, EMPTY_BOUNDS),
   );
-  const [bucket, setBucket] = useState<TimelineBucketKey>(DEFAULT_BUCKET);
-  const [range, setRange] = useState(initialRangeRef.current);
 
   const timeline = useTimelineQuery(bucket, range, listContext);
 
@@ -43,8 +42,8 @@ export function TimelineChartSection({ dark }: Props) {
     [],
   );
 
-  /** Only block UI on first load; refetches keep previous chart data (see keepPreviousData). */
-  const chartLoading = timeline.isPending;
+  /** Block pan/zoom and bucket switches while any timeline request is in flight. */
+  const chartLoading = timeline.isPending || timeline.isFetching;
 
   return (
     <TimelineChart

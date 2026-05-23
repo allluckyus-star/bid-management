@@ -89,7 +89,9 @@ export function buildTimelineFromRows(
     return t >= startIso && t <= endIso;
   });
 
-  const users = [...new Set(rows.map((r) => r.captured_by || "Unknown"))].sort();
+  const users = [
+    ...new Set(allRows.map((r) => r.captured_by || "Unknown")),
+  ].sort();
 
   const slotSet = new Set<string>();
   let cur = floorBucket(startIso, bucket);
@@ -118,9 +120,8 @@ export function buildTimelineFromRows(
     cm.set(co, (cm.get(co) ?? 0) + 1);
   }
 
-  const series = users.map((captured_by) => ({
-    captured_by,
-    buckets: slots.map((bucket_start) => {
+  const buildBuckets = (captured_by: string) =>
+    slots.map((bucket_start) => {
       const key = `${bucket_start}|${captured_by}`;
       const top = [...(companies.get(key)?.entries() ?? [])]
         .sort((a, b) => b[1] - a[1])
@@ -133,8 +134,17 @@ export function buildTimelineFromRows(
         table_count: highlight.get(key) ?? 0,
         top_companies: top,
       };
-    }),
-  }));
+    });
+
+  const series =
+    users.length > 0
+      ? users.map((captured_by) => ({
+          captured_by,
+          buckets: buildBuckets(captured_by),
+        }))
+      : slots.length > 0
+        ? [{ captured_by: "—", buckets: buildBuckets("—") }]
+        : [];
 
   const times = allRows.map((r) => r.captured_at).sort();
 

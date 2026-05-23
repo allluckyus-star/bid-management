@@ -11,6 +11,39 @@ export const VIEW_WINDOW = {
   "1month": { initialHalfMonths: 1, panStepMonths: 1 },
 } as const;
 
+/** Max time past “now” that may be loaded / panned (hard ceiling per bucket view). */
+export const FUTURE_PAD_MS: Record<TimelineBucketKey, number> = {
+  "5m": 30 * 60 * 1000,
+  "30m": 3 * 60 * 60 * 1000,
+  "1h": 5 * 60 * 60 * 1000,
+  "1d": 2 * DAY_MS,
+  "1month": 0,
+};
+
+/** Past span before “now” on first load (sub-hour buckets use ms, not days). */
+const PAST_PAD_MS: Record<TimelineBucketKey, number> = {
+  "5m": 2 * DAY_MS,
+  "30m": 7 * DAY_MS,
+  "1h": 7 * DAY_MS,
+  "1d": 30 * DAY_MS,
+  "1month": 0,
+};
+
+/** Latest allowed end timestamp for the loaded timeline window. */
+export function maxFutureEndMs(
+  bucket: TimelineBucketKey,
+  nowMs: number = Date.now(),
+): number {
+  if (bucket === "1month") {
+    const cur = floorBucketMs(nowMs, bucket);
+    return endOfUtcMonth(addUtcMonths(cur, 1));
+  }
+  return nowMs + FUTURE_PAD_MS[bucket];
+}
+
+/** @deprecated use maxFutureEndMs */
+export const minFutureEndMs = maxFutureEndMs;
+
 export type HistoryBounds = { minMs: number | null; maxMs: number | null };
 
 export type TimeRange = { start: string; end: string };
@@ -58,12 +91,15 @@ function clampRange(
     s = floorBucketMs(bounds.minMs, bucket);
     e = s + width;
   }
-  if (bounds.maxMs != null) {
-    const maxEnd = bounds.maxMs + (bucket === "1d" ? DAY_MS : 3600000);
-    if (e > maxEnd) {
-      e = maxEnd;
-      s = Math.max(bounds.minMs ?? s, e - width);
-    }
+  const futureCap = maxFutureEndMs(bucket);
+  if (e > futureCap) {
+    e = futureCap;
+    s = Math.max(bounds.minMs ?? s, e - width);
+  }
+
+  if (bounds.maxMs != null && e > bounds.maxMs + DAY_MS * 400) {
+    e = bounds.maxMs + DAY_MS;
+    s = Math.max(bounds.minMs ?? s, e - width);
   }
   if (s >= e) e = s + DAY_MS;
   return { startMs: s, endMs: e };
@@ -73,19 +109,20 @@ function toRange(startMs: number, endMs: number): TimeRange {
   return { start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString() };
 }
 
-/** First load: now − half … now + half (e.g. 1h → ±7 days). */
+/** First load: past window through now + bucket-specific future pad (empty buckets allowed). */
 export function initialRange(bucket: TimelineBucketKey, bounds: HistoryBounds = { minMs: null, maxMs: null }): TimeRange {
   const now = Date.now();
   if (bucket === "1month") {
     const { initialHalfMonths } = VIEW_WINDOW["1month"];
     const cur = floorBucketMs(now, bucket);
     const startMs = addUtcMonths(cur, -initialHalfMonths);
-    const endMs = endOfUtcMonth(addUtcMonths(cur, initialHalfMonths));
+    const endMs = endOfUtcMonth(addUtcMonths(cur, 1));
     const c = clampRange(startMs, endMs, bounds, bucket);
     return toRange(c.startMs, c.endMs);
   }
-  const half = VIEW_WINDOW[bucket].initialHalfDays * DAY_MS;
-  const c = clampRange(now - half, now + half, bounds, bucket);
+  const startMs = now - PAST_PAD_MS[bucket];
+  const endMs = maxFutureEndMs(bucket, now);
+  const c = clampRange(startMs, endMs, bounds, bucket);
   return toRange(c.startMs, c.endMs);
 }
 
@@ -120,12 +157,10 @@ export function shiftLoadedRange(
     newStartMs = floorBucketMs(bounds.minMs, bucket);
     newEndMs = newStartMs + width;
   }
-  if (bounds.maxMs != null) {
-    const maxEnd = bounds.maxMs + (bucket === "1d" ? DAY_MS : 3600000);
-    if (newEndMs > maxEnd) {
-      newEndMs = maxEnd;
-      newStartMs = newEndMs - width;
-    }
+  const futureCap = maxFutureEndMs(bucket);
+  if (newEndMs > futureCap) {
+    newEndMs = futureCap;
+    newStartMs = Math.max(bounds.minMs ?? newStartMs, newEndMs - width);
   }
 
   return toRange(newStartMs, newEndMs);
@@ -147,8 +182,9 @@ export function canPanOlder(loadedStartIso: string, bounds: HistoryBounds, bucke
 }
 
 export function canPanNewer(loadedEndIso: string, bounds: HistoryBounds, bucket: TimelineBucketKey): boolean {
-  if (bounds.maxMs == null) return false;
   const endMs = new Date(loadedEndIso).getTime();
+  if (endMs >= maxFutureEndMs(bucket) - 1000) return false;
+  if (bounds.maxMs == null) return false;
   if (bucket === "1month") {
     return endMs < endOfUtcMonth(floorBucketMs(bounds.maxMs, bucket));
   }

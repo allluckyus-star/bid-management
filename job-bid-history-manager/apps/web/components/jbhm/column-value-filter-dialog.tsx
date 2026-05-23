@@ -12,6 +12,41 @@ import {
 import { fetchColumnValues } from "@/lib/api/client";
 import { COLUMN_LABELS } from "@/lib/jbhm/column-controls";
 
+/** Load distinct values for this column without applying this column's own filter. */
+function contextExcludingField(
+  listContext: JobFilters,
+  field: JobFilterableField,
+): JobFilters {
+  const column_in = { ...listContext.column_in };
+  delete column_in[field];
+  const column_search = { ...listContext.column_search };
+  delete column_search[field as keyof typeof column_search];
+
+  const next: JobFilters = { ...listContext };
+  if (Object.keys(column_in).length) next.column_in = column_in;
+  else delete next.column_in;
+  if (Object.keys(column_search).length) next.column_search = column_search;
+  else delete next.column_search;
+  return next;
+}
+
+function selectionStateFromApplied(
+  options: { value: string; count: number }[],
+  selected: string[] | undefined,
+): { allChecked: boolean; draft: Set<string> } {
+  if (!selected?.length) {
+    return { allChecked: true, draft: new Set() };
+  }
+  const optionValues = options.map((o) => o.value);
+  const draft = new Set(selected);
+  const everyOptionSelected =
+    optionValues.length > 0 && optionValues.every((v) => draft.has(v));
+  if (everyOptionSelected) {
+    return { allChecked: true, draft: new Set() };
+  }
+  return { allChecked: false, draft };
+}
+
 type Props = {
   open: boolean;
   field: JobFilterableField;
@@ -34,17 +69,41 @@ export function ColumnValueFilterDialog({
   const [draft, setDraft] = useState<Set<string>>(new Set());
   const [allChecked, setAllChecked] = useState(true);
 
+  const valuesContext = useMemo(
+    () => contextExcludingField(listContext, field),
+    [listContext, field],
+  );
+
+  const selectedKey = selected?.join("\0") ?? "";
+
   useEffect(() => {
     if (!open) return;
-    const initial = selected?.length ? new Set(selected) : null;
-    setAllChecked(!initial);
-    setDraft(initial ?? new Set());
     setLoading(true);
-    void fetchColumnValues(field, listContext)
-      .then((res) => setOptions(res.values))
-      .catch(() => setOptions([]))
+    void fetchColumnValues(field, valuesContext)
+      .then((res) => {
+        const byValue = new Map(res.values.map((o) => [o.value, o.count]));
+        for (const v of selected ?? []) {
+          if (!byValue.has(v)) byValue.set(v, 0);
+        }
+        const merged = [...byValue.entries()]
+          .map(([value, count]) => ({ value, count }))
+          .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+
+        const { allChecked: all, draft: nextDraft } = selectionStateFromApplied(
+          merged,
+          selected,
+        );
+        setOptions(merged);
+        setAllChecked(all);
+        setDraft(nextDraft);
+      })
+      .catch(() => {
+        setOptions([]);
+        setAllChecked(true);
+        setDraft(new Set());
+      })
       .finally(() => setLoading(false));
-  }, [open, field, selected, listContext]);
+  }, [open, field, valuesContext, selectedKey]);
 
   const totalCount = useMemo(() => options.reduce((s, o) => s + o.count, 0), [options]);
 
