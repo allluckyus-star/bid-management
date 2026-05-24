@@ -7,6 +7,7 @@ import { useDashboardFilters } from "@/components/dashboard/dashboard-filters-co
 import { JobsTable } from "@/components/jbhm/jobs-table";
 import { TablePagination } from "@/components/jbhm/table-pagination";
 import { Button } from "@/components/ui/button";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { useInteractionHold } from "@/hooks/use-interaction-hold";
 import {
   useDashboardSummaryQuery,
@@ -43,6 +44,7 @@ export function JobsTableSection({ interactionHeld, setInteractionHold }: Props)
 
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [deleting, setDeleting] = useState(false);
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const filterKeyRef = useRef(filterKey);
   const pageKeyRef = useRef(pageKey);
   const isFirstLoadRef = useRef(true);
@@ -135,7 +137,14 @@ export function JobsTableSection({ interactionHeld, setInteractionHold }: Props)
 
   const handleBulkDelete = async () => {
     if (!selectedIds.length) return;
-    if (!confirm(`Delete ${selectedIds.length} selected job(s)?`)) return;
+    const ok = await confirm({
+      title: `Delete ${selectedIds.length} selected job${selectedIds.length === 1 ? "" : "s"}?`,
+      description: "They will be removed from the team board.",
+      confirmLabel: "Delete",
+      cancelLabel: "Cancel",
+      variant: "destructive",
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       const n = await runDelete(selectedIds);
@@ -148,7 +157,14 @@ export function JobsTableSection({ interactionHeld, setInteractionHold }: Props)
   };
 
   const handleDeleteOne = async (jobId: string) => {
-    if (!confirm("Delete this job?")) return;
+    const ok = await confirm({
+      title: "Delete this job?",
+      description: "It will be removed from the team board.",
+      confirmLabel: "Delete",
+      cancelLabel: "Cancel",
+      variant: "destructive",
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       const n = await runDelete([jobId]);
@@ -162,6 +178,7 @@ export function JobsTableSection({ interactionHeld, setInteractionHold }: Props)
 
   return (
     <>
+      {confirmDialog}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <span className="text-xs text-muted-foreground">
           Page {filters.page ?? 1}: {jobs.length} rows · {total} total
