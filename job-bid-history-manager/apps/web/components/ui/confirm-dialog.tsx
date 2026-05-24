@@ -43,8 +43,8 @@ export function ConfirmDialog({
           "max-w-md gap-0 overflow-hidden p-0 sm:rounded-xl",
           "[&>button]:hidden",
         )}
-        onEscapeKeyDown={(e) => loading && e.preventDefault()}
-        onPointerDownOutside={(e) => loading && e.preventDefault()}
+        onEscapeKeyDown={(e: KeyboardEvent) => loading && e.preventDefault()}
+        onPointerDownOutside={(e: CustomEvent) => loading && e.preventDefault()}
       >
         <div className="border-b bg-card px-5 py-4">
           <DialogHeader className="space-y-2 text-left">

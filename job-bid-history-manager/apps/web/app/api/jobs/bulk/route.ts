@@ -17,7 +17,7 @@ export async function DELETE(request: Request) {
   if (!hasServiceRoleKey()) {
     return NextResponse.json(
       { error: "Server missing SUPABASE_SERVICE_ROLE_KEY (required for delete)" },
-      503,
+      { status: 503 },
     );
   }
 
