@@ -291,6 +291,20 @@ export async function rejectJoinRequest(requestId: string): Promise<void> {
   await request(`/api/team-join-requests/${requestId}/reject`, { method: "POST" });
 }
 
+export async function approveJoinRequestAsOwner(requestId: string): Promise<void> {
+  await request(`/api/team-join-requests/${requestId}/approve-owner`, { method: "POST" });
+}
+
+export async function addTeamMemberByEmail(
+  teamId: string,
+  email: string,
+): Promise<{ message: string }> {
+  return request(`/api/team/${teamId}/members`, {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
 export async function approveJoinRequest(
   requestId: string,
   token: string,

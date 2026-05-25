@@ -5,6 +5,12 @@ import {
   requireTeamOwner,
   teamAccessToResponse,
 } from "@/lib/teams/access";
+import {
+  findProfileByEmail,
+  insertTeamMember,
+  markPendingJoinRequestsApproved,
+} from "@/lib/teams/add-member";
+import { createAdminClient, hasServiceRoleKey } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 type Params = { params: Promise<{ teamId: string }> };
@@ -83,6 +89,57 @@ export async function GET(_request: Request, { params }: Params) {
       { error: err instanceof Error ? err.message : "Failed" },
       { status: 500 },
     );
+  }
+}
+
+export async function POST(request: Request, { params }: Params) {
+  try {
+    const { teamId } = await params;
+    await requireTeamOwner(teamId);
+
+    if (!hasServiceRoleKey()) {
+      return NextResponse.json(
+        { error: "Server missing SUPABASE_SERVICE_ROLE_KEY" },
+        { status: 503 },
+      );
+    }
+
+    const body = (await request.json()) as { email?: string };
+    const email = (body.email ?? "").trim();
+    if (!email) {
+      return NextResponse.json({ error: "email is required" }, { status: 400 });
+    }
+
+    const admin = createAdminClient();
+    const profile = await findProfileByEmail(admin, email);
+
+    const { data: team } = await admin
+      .from("teams")
+      .select("owner_user_id")
+      .eq("id", teamId)
+      .maybeSingle();
+
+    if (team?.owner_user_id === profile.id) {
+      return NextResponse.json({ error: "Owner is already on the team" }, { status: 400 });
+    }
+
+    await insertTeamMember(admin, teamId, profile.id);
+    await markPendingJoinRequestsApproved(admin, teamId, profile.id);
+
+    return NextResponse.json({
+      message: "Member added",
+      user_id: profile.id,
+      email: profile.email,
+    });
+  } catch (err) {
+    const res = teamAccessToResponse(err);
+    if (res) return res;
+    const msg = err instanceof Error ? err.message : "Failed";
+    const status =
+      msg.includes("No account found") || msg.includes("Already a team member")
+        ? 400
+        : 500;
+    return NextResponse.json({ error: msg }, { status });
   }
 }
 

@@ -14,6 +14,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  addTeamMemberByEmail,
+  approveJoinRequestAsOwner,
   fetchTeamMembers,
   rejectJoinRequest,
   removeTeamMember,
@@ -32,6 +34,7 @@ export function TeamMembersDialog({ teamId, open, onOpenChange }: Props) {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [rename, setRename] = useState("");
+  const [addEmail, setAddEmail] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -64,6 +67,19 @@ export function TeamMembersDialog({ teamId, open, onOpenChange }: Props) {
     }
   };
 
+  const handleApprove = async (requestId: string) => {
+    setBusy(true);
+    try {
+      await approveJoinRequestAsOwner(requestId);
+      toast.success("Member approved");
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Approve failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleReject = async (requestId: string) => {
     setBusy(true);
     try {
@@ -87,6 +103,22 @@ export function TeamMembersDialog({ teamId, open, onOpenChange }: Props) {
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Rename failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAddMember = async () => {
+    const email = addEmail.trim();
+    if (!email) return;
+    setBusy(true);
+    try {
+      const res = await addTeamMemberByEmail(teamId, email);
+      toast.success(res.message ?? "Member added");
+      setAddEmail("");
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not add member");
     } finally {
       setBusy(false);
     }
@@ -127,6 +159,35 @@ export function TeamMembersDialog({ teamId, open, onOpenChange }: Props) {
               </p>
             )}
 
+            {data.is_owner ? (
+              <div className="space-y-2 rounded-md border border-dashed p-3">
+                <Label htmlFor="add-member-email">Add teammate by email</Label>
+                <p className="text-xs text-muted-foreground">
+                  They must already have an account (same email as sign-up). No email confirmation
+                  needed.
+                </p>
+                <div className="flex gap-2">
+                  <Input
+                    id="add-member-email"
+                    type="email"
+                    placeholder="teammate@example.com"
+                    value={addEmail}
+                    onChange={(e) => setAddEmail(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void handleAddMember();
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    disabled={busy || !addEmail.trim()}
+                    onClick={() => void handleAddMember()}
+                  >
+                    Add
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
             {data.is_owner && data.pending_requests.length > 0 ? (
               <div className="space-y-2">
                 <h3 className="text-sm font-semibold">Pending join requests</h3>
@@ -134,23 +195,29 @@ export function TeamMembersDialog({ teamId, open, onOpenChange }: Props) {
                   {data.pending_requests.map((r) => (
                     <li
                       key={r.id}
-                      className="flex items-center justify-between gap-2 rounded border px-3 py-2"
+                      className="flex flex-wrap items-center justify-between gap-2 rounded border px-3 py-2"
                     >
                       <span>{r.requester_email}</span>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() => void handleReject(r.id)}
-                      >
-                        Reject
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => void handleApprove(r.id)}
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => void handleReject(r.id)}
+                        >
+                          Reject
+                        </Button>
+                      </div>
                     </li>
                   ))}
                 </ul>
-                <p className="text-xs text-muted-foreground">
-                  Approve via the email link sent to you as team owner.
-                </p>
               </div>
             ) : null}
 
