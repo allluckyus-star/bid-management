@@ -15,7 +15,7 @@ Identity (`captured_by`) is resolved on the server from the token owner’s prof
    - **Test connection** — should show “Connected as …”
 3. Load unpacked from this folder in `chrome://extensions` (Reload after code changes).
 
-Default API: `https://bid-management-ldkelp851-ethan-s-projects-1231.vercel.app`. Developers can switch to **Localhost** in Settings only.
+Default API: `https://bid-management-peach.vercel.app`. Developers can switch to **Localhost** in Settings only.
 
 ## Capture
 
