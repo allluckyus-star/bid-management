@@ -23,6 +23,7 @@ type Props = {
   onUpdated: () => void;
 };
 
+/** Per-job picker: toggle existing team tags only (no create). */
 export function JobTagsDialog({ job, allTags, open, onOpenChange, onUpdated }: Props) {
   const teamId = useTeamId();
   const [busy, setBusy] = useState(false);
@@ -79,35 +80,41 @@ export function JobTagsDialog({ job, allTags, open, onOpenChange, onUpdated }: P
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : sortedTags.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No tags in the system yet. Add tags from the dashboard tag manager.
+            No team tags yet. Use <strong>Manage tags</strong> above the table to add tags your
+            team can assign to jobs.
           </p>
         ) : (
-          <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
-            {sortedTags.map((tag) => {
-              const checked = pendingIds.has(tag.id);
-              return (
-                <li key={tag.id}>
-                  <label className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 hover:bg-muted/60">
-                    <Checkbox
-                      checked={checked}
-                      disabled={busy}
-                      onCheckedChange={(v: boolean | "indeterminate") => {
-                        void toggleTag(tag.id, v === true);
-                      }}
-                    />
-                    <span className="flex-1 text-sm">{tag.name}</span>
-                    {tag.color ? (
-                      <span
-                        className="h-3 w-3 shrink-0 rounded-full border"
-                        style={{ backgroundColor: tag.color }}
-                        aria-hidden
+          <>
+            <p className="text-xs text-muted-foreground shrink-0">
+              Check tags to add them to this job; uncheck to remove.
+            </p>
+            <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
+              {sortedTags.map((tag) => {
+                const checked = pendingIds.has(tag.id);
+                return (
+                  <li key={tag.id}>
+                    <label className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 hover:bg-muted/60">
+                      <Checkbox
+                        checked={checked}
+                        disabled={busy}
+                        onCheckedChange={(v: boolean | "indeterminate") => {
+                          void toggleTag(tag.id, v === true);
+                        }}
                       />
-                    ) : null}
-                  </label>
-                </li>
-              );
-            })}
-          </ul>
+                      <span className="flex-1 text-sm">{tag.name}</span>
+                      {tag.color ? (
+                        <span
+                          className="h-3 w-3 shrink-0 rounded-full border"
+                          style={{ backgroundColor: tag.color }}
+                          aria-hidden
+                        />
+                      ) : null}
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
         )}
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

@@ -4,6 +4,7 @@ import {
   requireAuthUser,
   teamAccessToResponse,
 } from "@/lib/teams/access";
+import { ensureDefaultTags } from "@/lib/tags/ensure-defaults";
 import { createClient } from "@/lib/supabase/server";
 
 export async function GET() {
@@ -104,6 +105,8 @@ export async function POST(request: Request) {
     if (memberErr) {
       return NextResponse.json({ error: memberErr.message }, { status: 500 });
     }
+
+    await ensureDefaultTags(supabase, team.id, user.id);
 
     return NextResponse.json({ team });
   } catch (err) {

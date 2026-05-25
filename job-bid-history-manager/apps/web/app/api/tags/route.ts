@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { withTeamRoute } from "@/lib/api/with-team-route";
-import { ensureDefaultTags } from "@/lib/tags/ensure-defaults";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuthUser } from "@/lib/teams/access";
 
 export async function GET(request: Request) {
   return withTeamRoute(request, async (teamId) => {
-    const { supabase, user } = await requireAuthUser();
-    await ensureDefaultTags(supabase, teamId, user.id);
+    const { supabase } = await requireAuthUser();
 
     const { data, error } = await supabase
       .from("tags")

@@ -1,13 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { CAPTURE_TAG_NAMES } from "@jbhm/shared";
 
-import { ALLOWED_TAG_NAMES, DEFAULT_TAG_COLORS } from "@/lib/tags/constants";
+import { DEFAULT_TAG_COLORS } from "@/lib/tags/constants";
 
+/** Seed suggested capture tags for a team if missing. Does not remove user-created tags. */
 export async function ensureDefaultTags(
   supabase: SupabaseClient,
   teamId: string,
   userId: string,
 ) {
-  for (const name of ALLOWED_TAG_NAMES) {
+  for (const name of CAPTURE_TAG_NAMES) {
     const { data: existing } = await supabase
       .from("tags")
       .select("id")
@@ -23,16 +25,5 @@ export async function ensureDefaultTags(
         color: DEFAULT_TAG_COLORS[name] ?? "#64748b",
       });
     }
-  }
-
-  const { data: all } = await supabase
-    .from("tags")
-    .select("id, name")
-    .eq("team_id", teamId);
-  const allowed = new Set(ALLOWED_TAG_NAMES);
-  const stale = (all ?? []).filter((t) => !allowed.has(t.name.toLowerCase()));
-  for (const tag of stale) {
-    await supabase.from("job_tags").delete().eq("tag_id", tag.id);
-    await supabase.from("tags").delete().eq("id", tag.id);
   }
 }

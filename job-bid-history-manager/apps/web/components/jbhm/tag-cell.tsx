@@ -28,8 +28,8 @@ export function TagCell({ job, onManageTags, tagsAvailable }: Props) {
         size="sm"
         className="relative z-10 h-6 w-6 p-0"
         disabled={!tagsAvailable}
-        aria-label="Manage tags"
-        title={tagsAvailable ? "Manage tags" : "No tags defined"}
+        aria-label="Add or remove tags on this job"
+        title={tagsAvailable ? "Add or remove tags" : "No tags defined — use Manage tags above the table"}
         onClick={(e) => {
           e.stopPropagation();
           onManageTags(job.id);
