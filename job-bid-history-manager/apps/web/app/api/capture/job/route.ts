@@ -3,6 +3,7 @@ import { resolveUserIdFromBearer } from "@/lib/auth/extension-token";
 import { extractJobData } from "@/lib/extraction/extract-job";
 import { jsonWithCors, optionsResponse } from "@/lib/http/cors";
 import { saveCapturedJob } from "@/lib/jobs/save-capture";
+import { broadcastTeamDashboardInvalidate } from "@/lib/realtime/broadcast-team-dashboard";
 import { createAdminClient, hasServiceRoleKey } from "@/lib/supabase/admin";
 
 const PROMPT_VERSION = "phase4-salary-jd-tags";
@@ -96,6 +97,8 @@ export async function POST(request: Request) {
     .from("extension_tokens")
     .update({ last_used_at: new Date().toISOString() })
     .eq("id", tokenUser.tokenId);
+
+  void broadcastTeamDashboardInvalidate(tokenUser.teamId, "capture");
 
   return jsonWithCors(request, {
     job_id: jobId,

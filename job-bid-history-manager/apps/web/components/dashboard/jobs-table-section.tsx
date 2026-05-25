@@ -61,7 +61,7 @@ export function JobsTableSection({ interactionHeld, setInteractionHold }: Props)
     void invalidateRef.current.summary();
     void invalidateRef.current.timeline();
   }, []);
-  const jobsQuery = useJobsQuery(apiFilters, { paused: interactionHeld, pollMs: 45_000 });
+  const jobsQuery = useJobsQuery(apiFilters, { paused: interactionHeld });
   const summaryQuery = useDashboardSummaryQuery({ paused: interactionHeld });
   const tagsQuery = useTagsQuery();
 

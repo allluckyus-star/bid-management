@@ -12,6 +12,7 @@ import {
 } from "@/lib/api/client";
 import { useTeamId } from "@/context/team-context";
 import { dashboardKeys } from "@/lib/dashboard/query-keys";
+import { DASHBOARD_FALLBACK_REFETCH_MS } from "@/lib/dashboard/realtime-invalidation";
 import { useVisibleInterval } from "@/hooks/use-visible-interval";
 
 const STALE = {
@@ -27,7 +28,10 @@ export function useJobsQuery(
   opts: { paused: boolean; pollMs?: number },
 ) {
   const teamId = useTeamId();
-  const interval = useVisibleInterval(opts.pollMs ?? 45_000, opts.paused);
+  const interval = useVisibleInterval(
+    opts.pollMs ?? DASHBOARD_FALLBACK_REFETCH_MS,
+    opts.paused,
+  );
   return useQuery({
     queryKey: dashboardKeys.jobs(teamId, apiFilters),
     queryFn: () => fetchJobs(teamId, apiFilters),
@@ -38,7 +42,7 @@ export function useJobsQuery(
 
 export function useDashboardSummaryQuery(opts: { paused: boolean }) {
   const teamId = useTeamId();
-  const interval = useVisibleInterval(120_000, opts.paused);
+  const interval = useVisibleInterval(DASHBOARD_FALLBACK_REFETCH_MS, opts.paused);
   return useQuery({
     queryKey: dashboardKeys.summary(teamId),
     queryFn: () => fetchDashboard(teamId),

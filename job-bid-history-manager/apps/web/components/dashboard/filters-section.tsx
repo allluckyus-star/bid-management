@@ -31,7 +31,7 @@ export function FiltersSection({ interactionHeld }: Props) {
         <div>
           <h2 className="text-sm font-semibold">Jobs & timeline</h2>
           <p className="text-xs text-muted-foreground">
-            Table refreshes every 45s when this tab is visible
+            Updates live when your team changes data (5 min fallback refresh)
             {interactionHeld ? " · paused while you work" : ""}
           </p>
         </div>

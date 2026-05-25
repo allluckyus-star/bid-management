@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { withTeamRoute } from "@/lib/api/with-team-route";
+import { broadcastTeamDashboardInvalidate } from "@/lib/realtime/broadcast-team-dashboard";
 import { createAdminClient, hasServiceRoleKey } from "@/lib/supabase/admin";
 
 export async function DELETE(request: Request) {
@@ -36,6 +37,10 @@ export async function DELETE(request: Request) {
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if ((data?.length ?? 0) > 0) {
+      void broadcastTeamDashboardInvalidate(teamId, "jobs-delete");
     }
 
     return NextResponse.json({ deleted_count: data?.length ?? 0 });

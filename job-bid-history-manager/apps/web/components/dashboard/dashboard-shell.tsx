@@ -13,9 +13,12 @@ import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { useInteractionHold } from "@/hooks/use-interaction-hold";
 import { useInvalidateDashboard } from "@/hooks/use-dashboard-queries";
+import { useTeamRealtime } from "@/hooks/use-team-realtime";
 import { notifyActionSuccess } from "@/lib/jbhm/notify";
 
 function DashboardShellInner({ teamId }: { teamId: string }) {
+  useTeamRealtime(teamId);
+
   const [dark, setDark] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
   const {
