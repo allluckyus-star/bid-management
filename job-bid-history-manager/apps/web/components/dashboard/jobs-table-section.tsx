@@ -51,6 +51,14 @@ export function JobsTableSection({ interactionHeld, setInteractionHold }: Props)
   const boardTotalRef = useRef<number | null>(null);
 
   const invalidate = useInvalidateDashboard();
+  const invalidateRef = useRef(invalidate);
+  invalidateRef.current = invalidate;
+
+  const handleRefresh = useCallback(() => {
+    void invalidateRef.current.jobs();
+    void invalidateRef.current.summary();
+    void invalidateRef.current.timeline();
+  }, []);
   const jobsQuery = useJobsQuery(apiFilters, { paused: interactionHeld, pollMs: 45_000 });
   const summaryQuery = useDashboardSummaryQuery({ paused: interactionHeld });
   const tagsQuery = useTagsQuery();
@@ -217,10 +225,7 @@ export function JobsTableSection({ interactionHeld, setInteractionHold }: Props)
         onRowSelectionChange={setRowSelection}
         onDeleteJob={handleDeleteOne}
         deleteBusy={deleting}
-        onRefresh={() => {
-          void invalidate.jobs();
-          void invalidate.summary();
-        }}
+        onRefresh={handleRefresh}
         setInteractionHold={setInteractionHold}
         interactionHeld={interactionHeld}
       />

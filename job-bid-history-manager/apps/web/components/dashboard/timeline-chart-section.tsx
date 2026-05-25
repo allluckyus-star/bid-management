@@ -4,7 +4,6 @@ import type { TimelineBucketKey } from "@jbhm/shared";
 import dynamic from "next/dynamic";
 import { useCallback, useState } from "react";
 import { ChartSkeleton } from "@/components/dashboard/chart-skeleton";
-import { useDashboardFilters } from "@/components/dashboard/dashboard-filters-context";
 import { useTimelineQuery } from "@/hooks/use-dashboard-queries";
 import { initialRange } from "@/lib/jbhm/timeline-window";
 
@@ -24,13 +23,13 @@ const DEFAULT_BUCKET: TimelineBucketKey = "1d";
 const EMPTY_BOUNDS = { minMs: null, maxMs: null } as const;
 
 export function TimelineChartSection({ dark }: Props) {
-  const { listContext } = useDashboardFilters();
   const [bucket, setBucket] = useState<TimelineBucketKey>(DEFAULT_BUCKET);
   const [range, setRange] = useState(() =>
     initialRange(DEFAULT_BUCKET, EMPTY_BOUNDS),
   );
 
-  const timeline = useTimelineQuery(bucket, range, listContext);
+  /** Chart always aggregates the full team board; table filters only affect the table. */
+  const timeline = useTimelineQuery(bucket, range);
 
   const handleRequestRange = useCallback(
     (b: TimelineBucketKey, r: { start: string; end: string }) => {

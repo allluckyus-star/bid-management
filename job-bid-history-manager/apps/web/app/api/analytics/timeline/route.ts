@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 
 const TIMELINE_TIMEOUT_MS = 20_000;
 
-const VALID_BUCKETS = new Set<TimelineBucketKey>(["5m", "30m", "1h", "1d", "1month"]);
+const VALID_BUCKETS = new Set<TimelineBucketKey>(["1h", "1d", "1month"]);
 
 export async function GET(request: Request) {
   const supabase = await createClient();

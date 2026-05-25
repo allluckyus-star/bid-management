@@ -3,7 +3,7 @@
 }
 
 body {
-  width: 320px;
+  width: 300px;
   margin: 0;
   padding: 16px;
   font-family: "Segoe UI", system-ui, sans-serif;
@@ -15,7 +15,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 4px;
+  margin-bottom: 14px;
 }
 
 .popup-logo {
@@ -25,75 +25,96 @@ body {
 }
 
 header h1 {
-  margin: 0 0 4px;
+  margin: 0;
   font-size: 16px;
 }
 
-.popup-header h1 {
-  margin: 0;
-}
-
 .subtitle {
-  margin: 0 0 14px;
+  margin: 2px 0 0;
   font-size: 11px;
   color: #94a3b8;
 }
 
-label {
-  display: block;
-  margin-bottom: 10px;
-}
-
-label span {
-  display: block;
-  font-size: 11px;
-  color: #94a3b8;
-  margin-bottom: 4px;
-}
-
-input {
-  width: 100%;
-  padding: 8px 10px;
-  border-radius: 8px;
+.status-card {
+  margin-bottom: 12px;
+  padding: 12px;
+  border-radius: 10px;
   border: 1px solid #334155;
   background: #1e293b;
-  color: #f8fafc;
-  font-size: 13px;
 }
 
-button {
+.status-card.ok {
+  border-color: #166534;
+  background: #14532d33;
+}
+
+.status-card.warn {
+  border-color: #854d0e;
+  background: #713f1233;
+}
+
+.status-card.err {
+  border-color: #991b1b;
+  background: #7f1d1d33;
+}
+
+.status-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.status-detail {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+button.primary {
   width: 100%;
-  margin-top: 6px;
-  padding: 10px;
+  padding: 11px;
   border: none;
   border-radius: 8px;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-}
-
-button.primary {
   background: #3b82f6;
-  color: white;
+  color: #fff;
 }
 
-button.primary:hover {
+button.primary:hover:not(:disabled) {
   background: #2563eb;
 }
 
-button.secondary {
-  background: #334155;
-  color: #e2e8f0;
-}
-
-button:disabled {
-  opacity: 0.6;
+button.primary:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
+.link-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.link-btn {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: transparent;
+  color: #93c5fd;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  background: #1e293b;
+}
+
 .status {
-  min-height: 18px;
-  margin: 10px 0 0;
+  min-height: 16px;
+  margin-top: 10px;
   font-size: 12px;
 }
 
@@ -103,16 +124,4 @@ button:disabled {
 
 .status.err {
   color: #f87171;
-}
-
-footer {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid #334155;
-}
-
-footer small {
-  color: #64748b;
-  font-size: 10px;
-  line-height: 1.4;
 }

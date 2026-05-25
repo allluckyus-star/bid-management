@@ -1,4 +1,5 @@
 node_modules/
+apps/web/public/downloads/*.zip
 build/
 dist/
 .DS_Store

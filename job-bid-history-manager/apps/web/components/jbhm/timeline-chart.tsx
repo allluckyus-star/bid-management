@@ -14,6 +14,7 @@ import {
 import {
   canPanNewer,
   canPanOlder,
+  dataAwareInitialRange,
   initialRange,
   parseHistoryBounds,
   shiftLoadedRange,
@@ -25,8 +26,6 @@ import {
 import { cn } from "@/lib/utils";
 
 const BUCKETS: { key: TimelineBucketKey; label: string }[] = [
-  { key: "5m", label: "5m" },
-  { key: "30m", label: "30m" },
   { key: "1h", label: "Hour" },
   { key: "1d", label: "Day" },
   { key: "1month", label: "Month" },
@@ -365,6 +364,49 @@ function findNearestBucketIndex(categories: string[], bucketKey: TimelineBucketK
     }
   }
   return best;
+}
+
+/** Zoom so every bucket that has bids is visible (not only “now” at the right edge). */
+function initialZoomToDataExtent(
+  data: TimelineResponse,
+  categories: string[],
+  bucketKey: TimelineBucketKey,
+): ZoomRange {
+  const n = categories.length;
+  if (n <= 1) return FULL_ZOOM;
+
+  const cap = MAX_VISIBLE_IN_VIEW[bucketKey];
+  if (n <= cap) return FULL_ZOOM;
+
+  let firstIdx = n;
+  let lastIdx = -1;
+  for (const s of data.series) {
+    for (let i = 0; i < s.buckets.length; i++) {
+      if ((s.buckets[i]?.count ?? 0) > 0) {
+        if (i < firstIdx) firstIdx = i;
+        if (i > lastIdx) lastIdx = i;
+      }
+    }
+  }
+  if (lastIdx < 0) return initialZoomAroundNow(categories, bucketKey);
+
+  const pad = bucketKey === "1month" ? 1 : bucketKey === "1d" ? 2 : 4;
+  let startIdx = Math.max(0, firstIdx - pad);
+  let endIdx = Math.min(n, lastIdx + pad + 1);
+  if (endIdx - startIdx >= n) return FULL_ZOOM;
+
+  if (endIdx - startIdx > cap) {
+    const mid = (startIdx + endIdx) / 2;
+    const half = Math.floor(cap / 2);
+    startIdx = Math.max(0, Math.floor(mid - half));
+    endIdx = Math.min(n, startIdx + cap);
+    startIdx = Math.max(0, endIdx - cap);
+  }
+
+  return {
+    start: (startIdx / n) * 100,
+    end: (endIdx / n) * 100,
+  };
 }
 
 function initialZoomAroundNow(categories: string[], bucketKey: TimelineBucketKey): ZoomRange {
@@ -765,7 +807,7 @@ export function TimelineChart({
           MAX_VISIBLE_IN_VIEW[bucketKey],
         );
       } else if (opts?.resetView) {
-        zoom = initialZoomAroundNow(categories, bucketKey);
+        zoom = initialZoomToDataExtent(res, categories, bucketKey);
       } else {
         zoom = labelState.zoom;
       }
@@ -783,13 +825,14 @@ export function TimelineChart({
     const bounds = parseHistoryBounds(data.history_start, data.history_end);
     historyBoundsRef.current = bounds;
     pendingResetRef.current = true;
-    onRequestRange(bucket, initialRange(bucket, bounds), { resetView: true });
+    onRequestRange(bucket, dataAwareInitialRange(bucket, bounds), { resetView: true });
   }, [data, bucket, onRequestRange]);
 
   useEffect(() => {
     setPinnedZoom(null);
     pendingResetRef.current = true;
     loadedWindowKeyRef.current = null;
+    rangeAlignedRef.current = false;
   }, [bucket]);
 
   useEffect(() => {
@@ -839,7 +882,7 @@ export function TimelineChart({
 
     const zoomForView =
       pinnedZoom ??
-      (categories.length > 1 ? initialZoomAroundNow(categories, bucket) : FULL_ZOOM);
+      (categories.length > 1 ? initialZoomToDataExtent(data, categories, bucket) : FULL_ZOOM);
     labelState.zoom = zoomForView;
 
     const visibleCount = visibleBucketWindow(categories.length, zoomForView).visibleCount;
@@ -1119,7 +1162,7 @@ export function TimelineChart({
                 pendingResetRef.current = true;
                 onRequestRange(
                   b.key,
-                  initialRange(b.key, historyBoundsRef.current),
+                  dataAwareInitialRange(b.key, historyBoundsRef.current),
                   { resetView: true },
                 );
               }}

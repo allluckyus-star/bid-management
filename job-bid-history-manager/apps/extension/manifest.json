@@ -1,9 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Job Bid History Capture",
-  "version": "0.4.0",
-  "description": "Capture visible job page text (innerText) and send to Job Bid History web API.",
+  "version": "0.5.0",
+  "description": "Capture visible job page text and send to Job Bid History (token set once in Settings).",
   "permissions": ["storage", "activeTab", "scripting", "contextMenus", "notifications"],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
   "host_permissions": [
     "http://localhost:3000/*",
     "http://127.0.0.1:3000/*",

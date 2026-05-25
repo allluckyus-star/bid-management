@@ -1,3 +1,4 @@
+import { resolveCapturedByForUser } from "@/lib/auth/extension-identity";
 import { resolveUserIdFromBearer } from "@/lib/auth/extension-token";
 import { extractJobData } from "@/lib/extraction/extract-job";
 import { jsonWithCors, optionsResponse } from "@/lib/http/cors";
@@ -58,9 +59,11 @@ export async function POST(request: Request) {
   }
 
   const capturedAt = body.captured_at ?? new Date().toISOString();
-  const capturedBy = (body.captured_by ?? "").trim() || "Unknown";
   const pageTitle = (body.page_title ?? "").trim();
   const sourceUrl = (body.source_url ?? "").trim();
+
+  const admin = createAdminClient();
+  const capturedBy = await resolveCapturedByForUser(admin, tokenUser.userId);
 
   const { extraction, modelName, partial } = await extractJobData(
     capturedText,
@@ -68,7 +71,6 @@ export async function POST(request: Request) {
     sourceUrl,
   );
 
-  const admin = createAdminClient();
   let jobId: string;
 
   try {

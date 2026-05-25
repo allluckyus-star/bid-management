@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { ExtensionInstallPanel } from "@/components/extension-install-panel";
+import { ExtensionPageToaster } from "@/components/extension-page-toaster";
 import { ExtensionTokensPanel } from "@/components/extension-tokens-panel";
 import { Button } from "@/components/ui/button";
 
@@ -11,7 +13,7 @@ export default function ExtensionPage() {
           <div>
             <h1 className="text-xl font-bold tracking-tight">Chrome extension</h1>
             <p className="text-sm text-muted-foreground">
-              Capture tokens for the Job Bid History Manager extension
+              Download the extension, install in Chrome, then create a capture token
             </p>
           </div>
           <Button variant="outline" size="sm" asChild>
@@ -20,9 +22,11 @@ export default function ExtensionPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[900px] px-6 py-6">
+      <main className="mx-auto max-w-[900px] space-y-6 px-6 py-6">
+        <ExtensionInstallPanel />
         <ExtensionTokensPanel />
       </main>
+      <ExtensionPageToaster />
     </div>
   );
 }

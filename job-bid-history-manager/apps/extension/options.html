@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JBHM Extension Settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Extension Settings</h1>
+      <p class="lead">Set your token once. Capture from the popup or right-click menu.</p>
+    </header>
+
+    <section class="card">
+      <h2>Capture token</h2>
+      <p class="hint">
+        Create a token in the web app: Dashboard → Chrome extension. Stored only in this browser.
+      </p>
+      <label>
+        <span>Token</span>
+        <input
+          id="captureToken"
+          type="password"
+          placeholder="jbhm_…"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </label>
+      <button id="saveToken" type="button" class="secondary">Save token</button>
+      <button id="testConnection" type="button" class="primary">Test connection</button>
+    </section>
+
+    <section class="card">
+      <h2>Environment (developers)</h2>
+      <p class="hint">Production is the default for all users.</p>
+      <div class="env-row">
+        <label class="env-option">
+          <input type="radio" name="apiEnv" value="production" checked />
+          <span>Production</span>
+          <code>https://bid-management-ldkelp851-ethan-s-projects-1231.vercel.app</code>
+        </label>
+        <label class="env-option">
+          <input type="radio" name="apiEnv" value="local" />
+          <span>Localhost</span>
+          <code>http://localhost:3000</code>
+        </label>
+      </div>
+      <button id="saveEnv" type="button" class="secondary">Save environment</button>
+    </section>
+
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+
+    <script src="config.js"></script>
+    <script src="storage.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>

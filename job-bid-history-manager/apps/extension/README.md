@@ -1,21 +1,30 @@
-# Chrome extension (v0.4.0)
+# Chrome extension (v0.5.0)
 
 Captures **`document.body.innerText` only** (no HTML) and POSTs to the web app:
 
 `POST {apiBaseUrl}/api/capture/job`  
 Header: `Authorization: Bearer jbhm_…`
 
-## Setup
+Identity (`captured_by`) is resolved on the server from the token owner’s profile — not sent from the extension.
 
-1. Run the web app (`npm run dev:web`) or use your Vercel URL.
-2. Sign in → Dashboard → **Extension** → **Create capture token** (copy once).
-3. Extension popup:
-   - **Web app URL** — e.g. `http://localhost:3000`
-   - **Capture token** — paste from dashboard
-   - **Captured by** — display name on the shared board
-4. Load unpacked extension from this folder in `chrome://extensions` (Reload after updates).
+## Setup (once)
+
+1. Sign in → Dashboard → **Extension** → **Create capture token** (copy once).
+2. Extension **Settings** (right-click extension → Options, or popup → Settings):
+   - Paste **Capture token**
+   - **Test connection** — should show “Connected as …”
+3. Load unpacked from this folder in `chrome://extensions` (Reload after code changes).
+
+Default API: `https://bid-management-ldkelp851-ethan-s-projects-1231.vercel.app`. Developers can switch to **Localhost** in Settings only.
 
 ## Capture
 
-- Toolbar button or right-click → **Capture job to Bid History**
-- Requires ~80+ characters of visible text on the page
+- Popup → **Capture this page**
+- Right-click on a page → **Capture this page to Job Bid History**
+- Requires visible text on the page (~80+ chars enforced server-side)
+
+## Popup
+
+- Connection status (from `GET /api/extension/me`)
+- **Open Dashboard** / **Settings**
+- No URL or `captured_by` fields on the popup

@@ -109,6 +109,35 @@ function toRange(startMs: number, endMs: number): TimeRange {
   return { start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString() };
 }
 
+/**
+ * Loaded window that includes all stored bids (with padding), not only “last N days from now”.
+ * Panning at the edges still shifts this window in fixed steps.
+ */
+export function dataAwareInitialRange(
+  bucket: TimelineBucketKey,
+  bounds: HistoryBounds,
+): TimeRange {
+  if (bounds.minMs == null || bounds.maxMs == null) {
+    return initialRange(bucket, bounds);
+  }
+
+  const now = Date.now();
+  const dataEnd = Math.max(bounds.maxMs, now);
+
+  if (bucket === "1month") {
+    const startMs = addUtcMonths(floorBucketMs(bounds.minMs, bucket), -1);
+    const endMs = endOfUtcMonth(addUtcMonths(floorBucketMs(dataEnd, bucket), 1));
+    const c = clampRange(startMs, endMs, bounds, bucket);
+    return toRange(c.startMs, c.endMs);
+  }
+
+  const padBefore = bucket === "1d" ? 3 * DAY_MS : DAY_MS;
+  const startMs = floorBucketMs(bounds.minMs, bucket) - padBefore;
+  const endMs = maxFutureEndMs(bucket, dataEnd + DAY_MS);
+  const c = clampRange(startMs, endMs, bounds, bucket);
+  return toRange(c.startMs, c.endMs);
+}
+
 /** First load: past window through now + bucket-specific future pad (empty buckets allowed). */
 export function initialRange(bucket: TimelineBucketKey, bounds: HistoryBounds = { minMs: null, maxMs: null }): TimeRange {
   const now = Date.now();

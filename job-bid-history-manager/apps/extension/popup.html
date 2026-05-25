@@ -3,44 +3,35 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>JBHM Capture</title>
+    <title>Job Bid Capture</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
     <header class="popup-header">
       <img src="icons/icon48.png" alt="" width="32" height="32" class="popup-logo" />
-      <h1>Job Bid Capture</h1>
-      <p class="subtitle">Visible text only · sent to your web app</p>
+      <div>
+        <h1>Job Bid Capture</h1>
+        <p class="subtitle">Visible page text → team board</p>
+      </div>
     </header>
 
-    <label>
-      <span>Captured by</span>
-      <input id="capturedBy" type="text" placeholder="Your name" autocomplete="name" />
-    </label>
+    <div id="statusCard" class="status-card" role="status">
+      <span id="statusLabel" class="status-label">Checking…</span>
+      <p id="statusDetail" class="status-detail"></p>
+    </div>
 
-    <label>
-      <span>Web app URL</span>
-      <input id="apiBaseUrl" type="url" placeholder="http://localhost:3000" />
-    </label>
+    <button id="captureBtn" type="button" class="primary" disabled>
+      Capture this page
+    </button>
 
-    <label>
-      <span>Capture token</span>
-      <input
-        id="captureToken"
-        type="password"
-        placeholder="jbhm_… from dashboard"
-        autocomplete="off"
-      />
-    </label>
+    <div class="link-row">
+      <button id="openDashboard" type="button" class="link-btn">Open Dashboard</button>
+      <button id="openSettings" type="button" class="link-btn">Settings</button>
+    </div>
 
-    <button id="saveSettings" type="button" class="secondary">Save settings</button>
-    <button id="captureBtn" type="button" class="primary">Capture this page</button>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
 
-    <p id="status" class="status" role="status"></p>
-
-    <footer>
-      <small>Create token: Dashboard → Chrome extension · Right-click page to capture</small>
-    </footer>
+    <script src="config.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

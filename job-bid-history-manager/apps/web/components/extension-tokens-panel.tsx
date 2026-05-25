@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 
 type TokenRow = {
   id: string;
@@ -13,6 +15,7 @@ type TokenRow = {
 };
 
 export function ExtensionTokensPanel() {
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const [tokens, setTokens] = useState<TokenRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,9 +63,14 @@ export function ExtensionTokensPanel() {
   };
 
   const revoke = async (id: string) => {
-    if (!confirm("Revoke this capture token? The extension will stop working until you add a new one.")) {
-      return;
-    }
+    const ok = await confirm({
+      title: "Revoke capture token?",
+      description:
+        "The extension will stop working until you create a new token and paste it in Settings.",
+      confirmLabel: "Revoke",
+      variant: "destructive",
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       const res = await fetch(`/api/extension-tokens/${id}`, { method: "DELETE" });
@@ -78,18 +86,25 @@ export function ExtensionTokensPanel() {
 
   const copyToken = async () => {
     if (!newToken) return;
-    await navigator.clipboard.writeText(newToken);
+    try {
+      await navigator.clipboard.writeText(newToken);
+      toast.success("Copied to clipboard");
+    } catch {
+      toast.error("Could not copy", {
+        description: "Select the token field and copy manually.",
+      });
+    }
   };
 
   return (
     <section className="rounded-lg border p-4 space-y-4">
+      {confirmDialog}
       <div>
-        <h2 className="text-lg font-semibold">Chrome extension</h2>
+        <h2 className="text-lg font-semibold">Capture token</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Create a capture token, paste it in the extension popup, and set API URL to this site
-          (e.g. <code className="rounded bg-muted px-1">http://localhost:3000</code> or your Vercel
-          URL). Extension sends <strong>innerText only</strong> to{" "}
-          <code className="rounded bg-muted px-1">/api/capture/job</code>.
+          After installing the extension, open its <strong>Settings</strong>, paste this token once,
+          and use <strong>Test connection</strong>. Production API URL is preconfigured; developers can
+          switch to localhost in Settings only.
         </p>
       </div>
 

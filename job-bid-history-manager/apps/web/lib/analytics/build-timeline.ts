@@ -1,53 +1,16 @@
 import type { JobFilters, TimelineBucketKey, TimelineResponse } from "@jbhm/shared";
 
+import {
+  addBucket,
+  floorBucket,
+  jobTimestampInRange,
+} from "@/lib/analytics/timeline-buckets";
+
 export type TimelineJobRow = {
   captured_at: string;
   captured_by: string | null;
   company_name: string | null;
 };
-
-const MS_5M = 5 * 60 * 1000;
-const MS_30M = 30 * 60 * 1000;
-const MS_1H = 3600 * 1000;
-
-function floorBucket(iso: string, bucket: TimelineBucketKey): string {
-  const d = new Date(iso);
-  if (bucket === "1month") {
-    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)).toISOString();
-  }
-  if (bucket === "1d") {
-    const local = new Date(d);
-    local.setHours(0, 0, 0, 0);
-    return local.toISOString().slice(0, 10) + "T00:00:00";
-  }
-  if (bucket === "30m") {
-    const t = Math.floor(d.getTime() / MS_30M) * MS_30M;
-    return new Date(t).toISOString();
-  }
-  if (bucket === "5m") {
-    const t = Math.floor(d.getTime() / MS_5M) * MS_5M;
-    return new Date(t).toISOString();
-  }
-  const t = Math.floor(d.getTime() / MS_1H) * MS_1H;
-  return new Date(t).toISOString();
-}
-
-function addBucket(slot: string, bucket: TimelineBucketKey): string {
-  const d = new Date(slot);
-  if (bucket === "1month") {
-    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toISOString();
-  }
-  if (bucket === "1d") {
-    return new Date(d.getTime() + 86400000).toISOString();
-  }
-  if (bucket === "30m") {
-    return new Date(d.getTime() + MS_30M).toISOString();
-  }
-  if (bucket === "5m") {
-    return new Date(d.getTime() + MS_5M).toISOString();
-  }
-  return new Date(d.getTime() + MS_1H).toISOString();
-}
 
 function jobMatchesHighlight(job: TimelineJobRow, filters?: JobFilters): boolean {
   if (!filters) return true;
@@ -84,10 +47,7 @@ export function buildTimelineFromRows(
   const startIso = startDt.toISOString();
   const endIso = endDt.toISOString();
 
-  const rows = allRows.filter((r) => {
-    const t = r.captured_at;
-    return t >= startIso && t <= endIso;
-  });
+  const rows = allRows.filter((r) => jobTimestampInRange(r.captured_at, startIso, endIso));
 
   const users = [
     ...new Set(allRows.map((r) => r.captured_by || "Unknown")),
@@ -100,7 +60,6 @@ export function buildTimelineFromRows(
     slotSet.add(cur);
     cur = addBucket(cur, bucket);
   }
-  const slots = [...slotSet].sort();
 
   const counts = new Map<string, number>();
   const highlight = new Map<string, number>();
@@ -109,6 +68,7 @@ export function buildTimelineFromRows(
   for (const job of rows) {
     const user = job.captured_by || "Unknown";
     const slot = floorBucket(job.captured_at, bucket);
+    slotSet.add(slot);
     const key = `${slot}|${user}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
     if (jobMatchesHighlight(job, tableHighlight)) {
@@ -119,6 +79,8 @@ export function buildTimelineFromRows(
     const cm = companies.get(key)!;
     cm.set(co, (cm.get(co) ?? 0) + 1);
   }
+
+  const slots = [...slotSet].sort();
 
   const buildBuckets = (captured_by: string) =>
     slots.map((bucket_start) => {
