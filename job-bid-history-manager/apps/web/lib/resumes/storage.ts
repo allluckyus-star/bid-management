@@ -20,8 +20,13 @@ export async function linkResumeToJob(
   }
 
   const admin = createAdminClient();
-  const { data: job } = await admin.from("jobs").select("id").eq("id", jobId).is("deleted_at", null).maybeSingle();
-  if (!job) throw new Error("Job not found");
+  const { data: job } = await admin
+    .from("jobs")
+    .select("id, team_id")
+    .eq("id", jobId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!job?.team_id) throw new Error("Job not found");
 
   const { data: existing } = await admin.from("resume_files").select("id, storage_path").eq("job_id", jobId);
   for (const row of existing ?? []) {
@@ -44,6 +49,7 @@ export async function linkResumeToJob(
 
   const { error: insErr } = await admin.from("resume_files").insert({
     id: resumeId,
+    team_id: job.team_id,
     user_id: userId,
     job_id: jobId,
     original_filename: file.name,

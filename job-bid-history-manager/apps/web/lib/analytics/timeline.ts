@@ -9,6 +9,7 @@ const TIMELINE_PAGE_SIZE = 1000;
 /** Supabase caps at 1000 rows per request — paginate so the chart sees the whole team board. */
 export async function fetchAllJobsForTimeline(
   supabase: SupabaseClient,
+  teamId: string,
 ): Promise<TimelineJobRow[]> {
   const all: TimelineJobRow[] = [];
   let from = 0;
@@ -17,6 +18,7 @@ export async function fetchAllJobsForTimeline(
     const { data, error } = await supabase
       .from("jobs")
       .select("captured_at, captured_by, company_name")
+      .eq("team_id", teamId)
       .is("deleted_at", null)
       .order("captured_at", { ascending: true })
       .range(from, from + TIMELINE_PAGE_SIZE - 1);
@@ -32,12 +34,13 @@ export async function fetchAllJobsForTimeline(
 }
 
 export async function buildTimeline(
+  teamId: string,
   bucket: TimelineBucketKey,
   start?: string,
   end?: string,
   tableHighlight?: JobFilters,
 ): Promise<TimelineResponse> {
   const supabase = await createClient();
-  const jobs = await fetchAllJobsForTimeline(supabase);
+  const jobs = await fetchAllJobsForTimeline(supabase, teamId);
   return buildTimelineFromRows(jobs, bucket, start, end, tableHighlight);
 }

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
-import { DashboardApp } from "@/components/dashboard-app";
 import { createClient } from "@/lib/supabase/server";
+import { resolveDashboardRedirect } from "@/lib/teams/redirect";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -11,5 +11,5 @@ export default async function DashboardPage() {
     redirect("/auth/login");
   }
 
-  return <DashboardApp />;
+  redirect(await resolveDashboardRedirect(data.user.id));
 }

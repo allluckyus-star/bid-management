@@ -89,6 +89,7 @@ function escapeIlike(s: string): string {
 }
 
 export async function listJobsFromFilters(
+  teamId: string,
   filters: JobFilters & { page?: number; page_size?: number },
 ): Promise<JobListResponse> {
   const page = Math.max(1, filters.page ?? 1);
@@ -102,7 +103,10 @@ export async function listJobsFromFilters(
 
   if (filters.tags?.length) {
     const tagNames = filters.tags.map((t) => t.toLowerCase());
-    const { data: tagRows } = await supabase.from("tags").select("id, name");
+    const { data: tagRows } = await supabase
+      .from("tags")
+      .select("id, name")
+      .eq("team_id", teamId);
     const tagIds = (tagRows ?? [])
       .filter((t) => tagNames.includes(t.name.toLowerCase()))
       .map((t) => t.id);
@@ -141,7 +145,8 @@ export async function listJobsFromFilters(
     `,
       { count: "exact" },
     )
-    .is("deleted_at", null);
+    .is("deleted_at", null)
+    .eq("team_id", teamId);
 
   if (jobIdFilter) query = query.in("id", jobIdFilter);
   if (filters.captured_by) query = query.eq("captured_by", filters.captured_by);
@@ -207,16 +212,15 @@ export async function listJobs(options: {
   page?: number;
   pageSize?: number;
 }): Promise<JobListResponse> {
-  return listJobsFromFilters({
-    page: options.page,
-    page_size: options.pageSize,
-    sort: [{ field: "captured_at", dir: "desc" }],
-  });
+  throw new Error("listJobs requires teamId — use listJobsFromFilters(teamId, …)");
 }
 
-export async function listJobsFromRequest(request: Request): Promise<JobListResponse> {
+export async function listJobsFromRequest(
+  request: Request,
+  teamId: string,
+): Promise<JobListResponse> {
   const url = new URL(request.url);
-  return listJobsFromFilters(parseJobFiltersFromSearchParams(url.searchParams));
+  return listJobsFromFilters(teamId, parseJobFiltersFromSearchParams(url.searchParams));
 }
 
 export async function getJobById(jobId: string): Promise<JobListItem | null> {

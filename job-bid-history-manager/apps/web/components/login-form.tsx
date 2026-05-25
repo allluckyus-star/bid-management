@@ -39,7 +39,10 @@ export function LoginForm({
       });
       if (error) throw error;
       // Update this route to redirect to an authenticated route. The user already has an active session.
-      router.push("/dashboard");
+      const pathRes = await fetch("/api/teams/redirect-path");
+      const pathData = (await pathRes.json()) as { path?: string; error?: string };
+      if (!pathRes.ok) throw new Error(pathData.error ?? "Could not resolve redirect");
+      router.push(pathData.path ?? "/teams");
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "An error occurred");
     } finally {

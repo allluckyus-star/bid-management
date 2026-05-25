@@ -1,6 +1,7 @@
 import type { JobListItem } from "@jbhm/shared";
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
+import { useTeamId } from "@/context/team-context";
 import { resumeDownloadUrl, unlinkJobResume, uploadJobResume } from "@/lib/api/client";
 import { notifyActionSuccess, notifyLoadError } from "@/lib/jbhm/notify";
 import { truncate } from "@/lib/utils";
@@ -13,6 +14,7 @@ type Props = {
 };
 
 export function ResumeCell({ job, busy, onUpdated, onPreview }: Props) {
+  const teamId = useTeamId();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const pickFile = () => inputRef.current?.click();
@@ -24,7 +26,7 @@ export function ResumeCell({ job, busy, onUpdated, onPreview }: Props) {
       return;
     }
     try {
-      await uploadJobResume(job.id, file);
+      await uploadJobResume(teamId, job.id, file);
       notifyActionSuccess("Resume uploaded");
       onUpdated();
     } catch (e) {
@@ -37,7 +39,7 @@ export function ResumeCell({ job, busy, onUpdated, onPreview }: Props) {
   const handleUnlink = async () => {
     if (!confirm("Unlink resume from this job?")) return;
     try {
-      await unlinkJobResume(job.id);
+      await unlinkJobResume(teamId, job.id);
       notifyActionSuccess("Resume unlinked");
       onUpdated();
     } catch (e) {

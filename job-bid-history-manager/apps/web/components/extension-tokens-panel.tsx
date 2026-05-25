@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useTeamId } from "@/context/team-context";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 
 type TokenRow = {
@@ -15,7 +16,9 @@ type TokenRow = {
 };
 
 export function ExtensionTokensPanel() {
+  const teamId = useTeamId();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
+  const teamQuery = `?teamId=${encodeURIComponent(teamId)}`;
   const [tokens, setTokens] = useState<TokenRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +29,7 @@ export function ExtensionTokensPanel() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/extension-tokens");
+      const res = await fetch(`/api/extension-tokens${teamQuery}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? res.statusText);
       setTokens(data.tokens ?? []);
@@ -35,7 +38,7 @@ export function ExtensionTokensPanel() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [teamQuery]);
 
   useEffect(() => {
     void load();
@@ -46,7 +49,7 @@ export function ExtensionTokensPanel() {
     setNewToken(null);
     setError(null);
     try {
-      const res = await fetch("/api/extension-tokens", {
+      const res = await fetch(`/api/extension-tokens${teamQuery}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: "Chrome extension" }),

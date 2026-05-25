@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useTeamId } from "@/context/team-context";
 import { fetchColumnValues } from "@/lib/api/client";
 import { COLUMN_LABELS } from "@/lib/jbhm/column-controls";
 
@@ -64,6 +65,7 @@ export function ColumnValueFilterDialog({
   onClose,
   onApply,
 }: Props) {
+  const teamId = useTeamId();
   const [options, setOptions] = useState<{ value: string; count: number }[]>([]);
   const [loading, setLoading] = useState(false);
   const [draft, setDraft] = useState<Set<string>>(new Set());
@@ -79,7 +81,7 @@ export function ColumnValueFilterDialog({
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    void fetchColumnValues(field, valuesContext)
+    void fetchColumnValues(teamId, field, valuesContext)
       .then((res) => {
         const byValue = new Map(res.values.map((o) => [o.value, o.count]));
         for (const v of selected ?? []) {

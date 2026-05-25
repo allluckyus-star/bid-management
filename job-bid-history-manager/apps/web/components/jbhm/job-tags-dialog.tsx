@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useTeamId } from "@/context/team-context";
 import { addTagToJob, removeTagFromJob } from "@/lib/api/client";
 import { notifyActionSuccess, notifyLoadError } from "@/lib/jbhm/notify";
 
@@ -23,6 +24,7 @@ type Props = {
 };
 
 export function JobTagsDialog({ job, allTags, open, onOpenChange, onUpdated }: Props) {
+  const teamId = useTeamId();
   const [busy, setBusy] = useState(false);
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
 
@@ -51,9 +53,9 @@ export function JobTagsDialog({ job, allTags, open, onOpenChange, onUpdated }: P
     });
     try {
       if (checked) {
-        await addTagToJob(job.id, tagId);
+        await addTagToJob(teamId, job.id, tagId);
       } else {
-        await removeTagFromJob(job.id, tagId);
+        await removeTagFromJob(teamId, job.id, tagId);
       }
       notifyActionSuccess(checked ? "Tag added" : "Tag removed");
       onUpdated();

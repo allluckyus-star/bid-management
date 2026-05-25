@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export async function saveCapturedJob(
   admin: SupabaseClient,
   opts: {
+    teamId: string;
     userId: string;
     capturedBy: string;
     capturedText: string;
@@ -30,6 +31,7 @@ export async function saveCapturedJob(
   const { data: job, error: jobError } = await admin
     .from("jobs")
     .insert({
+      team_id: opts.teamId,
       user_id: opts.userId,
       captured_by: opts.capturedBy,
       company_name: salary.company_name || null,
@@ -55,6 +57,7 @@ export async function saveCapturedJob(
 
   const { error: jdError } = await admin.from("job_descriptions").insert({
     job_id: job.id,
+    team_id: opts.teamId,
     user_id: opts.userId,
     raw_text: opts.capturedText.slice(0, 200000),
     cleaned_text: salary.cleaned_job_description || null,
@@ -71,6 +74,7 @@ export async function saveCapturedJob(
   }
 
   await attachCaptureTags(admin, {
+    teamId: opts.teamId,
     userId: opts.userId,
     jobId: job.id,
     tagNames: salary.tag_names,

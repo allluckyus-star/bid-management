@@ -3,13 +3,14 @@ import { redirect } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
+import { resolvePostLoginPath } from "@/lib/teams/redirect";
 
 export default async function Home() {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
 
   if (data.user) {
-    redirect("/dashboard");
+    redirect(await resolvePostLoginPath(data.user.id));
   }
 
   return (

@@ -10,6 +10,7 @@ import {
   fetchTags,
   fetchTimeline,
 } from "@/lib/api/client";
+import { useTeamId } from "@/context/team-context";
 import { dashboardKeys } from "@/lib/dashboard/query-keys";
 import { useVisibleInterval } from "@/hooks/use-visible-interval";
 
@@ -25,37 +26,41 @@ export function useJobsQuery(
   apiFilters: JobFilters,
   opts: { paused: boolean; pollMs?: number },
 ) {
+  const teamId = useTeamId();
   const interval = useVisibleInterval(opts.pollMs ?? 45_000, opts.paused);
   return useQuery({
-    queryKey: dashboardKeys.jobs(apiFilters),
-    queryFn: () => fetchJobs(apiFilters),
+    queryKey: dashboardKeys.jobs(teamId, apiFilters),
+    queryFn: () => fetchJobs(teamId, apiFilters),
     staleTime: STALE.jobs,
     refetchInterval: interval,
   });
 }
 
 export function useDashboardSummaryQuery(opts: { paused: boolean }) {
+  const teamId = useTeamId();
   const interval = useVisibleInterval(120_000, opts.paused);
   return useQuery({
-    queryKey: dashboardKeys.summary(),
-    queryFn: fetchDashboard,
+    queryKey: dashboardKeys.summary(teamId),
+    queryFn: () => fetchDashboard(teamId),
     staleTime: STALE.summary,
     refetchInterval: interval,
   });
 }
 
 export function useTagsQuery() {
+  const teamId = useTeamId();
   return useQuery({
-    queryKey: dashboardKeys.tags(),
-    queryFn: fetchTags,
+    queryKey: dashboardKeys.tags(teamId),
+    queryFn: () => fetchTags(teamId),
     staleTime: STALE.tags,
   });
 }
 
 export function useCapturedByUsersQuery() {
+  const teamId = useTeamId();
   return useQuery({
-    queryKey: dashboardKeys.users(),
-    queryFn: fetchCapturedByUsers,
+    queryKey: dashboardKeys.users(teamId),
+    queryFn: () => fetchCapturedByUsers(teamId),
     staleTime: STALE.users,
   });
 }
@@ -65,9 +70,10 @@ export function useTimelineQuery(
   range: { start: string; end: string } | null,
   listContext?: JobFilters,
 ) {
+  const teamId = useTeamId();
   return useQuery<TimelineResponse>({
-    queryKey: [...dashboardKeys.timeline(bucket, range?.start, range?.end), listContext] as const,
-    queryFn: () => fetchTimeline(bucket, range!, listContext),
+    queryKey: [...dashboardKeys.timeline(teamId, bucket, range?.start, range?.end), listContext] as const,
+    queryFn: () => fetchTimeline(teamId, bucket, range!, listContext),
     enabled: !!range,
     staleTime: STALE.timeline,
     refetchOnWindowFocus: false,
@@ -76,21 +82,23 @@ export function useTimelineQuery(
 }
 
 export function useJobDetailQuery(jobId: string | null) {
+  const teamId = useTeamId();
   return useQuery({
-    queryKey: dashboardKeys.job(jobId ?? ""),
-    queryFn: () => fetchJob(jobId!),
+    queryKey: dashboardKeys.job(teamId, jobId ?? ""),
+    queryFn: () => fetchJob(teamId, jobId!),
     enabled: !!jobId,
     staleTime: 30_000,
   });
 }
 
 export function useInvalidateDashboard() {
+  const teamId = useTeamId();
   const qc = useQueryClient();
   return {
-    jobs: () => qc.invalidateQueries({ queryKey: ["dashboard", "jobs"] }),
-    summary: () => qc.invalidateQueries({ queryKey: dashboardKeys.summary() }),
-    timeline: () => qc.invalidateQueries({ queryKey: ["dashboard", "timeline"] }),
-    tags: () => qc.invalidateQueries({ queryKey: dashboardKeys.tags() }),
-    all: () => qc.invalidateQueries({ queryKey: dashboardKeys.all }),
+    jobs: () => qc.invalidateQueries({ queryKey: ["dashboard", teamId, "jobs"] }),
+    summary: () => qc.invalidateQueries({ queryKey: dashboardKeys.summary(teamId) }),
+    timeline: () => qc.invalidateQueries({ queryKey: ["dashboard", teamId, "timeline"] }),
+    tags: () => qc.invalidateQueries({ queryKey: dashboardKeys.tags(teamId) }),
+    all: () => qc.invalidateQueries({ queryKey: dashboardKeys.all(teamId) }),
   };
 }

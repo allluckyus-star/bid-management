@@ -15,6 +15,7 @@ import {
   useJobsQuery,
   useTagsQuery,
 } from "@/hooks/use-dashboard-queries";
+import { useTeamId } from "@/context/team-context";
 import { bulkDeleteJobs } from "@/lib/api/client";
 import {
   notifyActionSuccess,
@@ -29,6 +30,7 @@ type Props = {
 };
 
 export function JobsTableSection({ interactionHeld, setInteractionHold }: Props) {
+  const teamId = useTeamId();
   const {
     filters,
     setFilters,
@@ -128,7 +130,7 @@ export function JobsTableSection({ interactionHeld, setInteractionHold }: Props)
 
   const runDelete = async (jobIds: string[]) => {
     if (!jobIds.length) return;
-    const res = await bulkDeleteJobs(jobIds);
+    const res = await bulkDeleteJobs(teamId, jobIds);
     if (res.deleted_count === 0) {
       throw new Error("No rows were deleted. You may need to sign in again.");
     }

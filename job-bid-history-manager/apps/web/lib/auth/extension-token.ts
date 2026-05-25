@@ -25,7 +25,7 @@ export function parseBearerToken(header: string | null): string | null {
 
 export async function resolveUserIdFromBearer(
   header: string | null,
-): Promise<{ userId: string; tokenId: string } | null> {
+): Promise<{ userId: string; tokenId: string; teamId: string } | null> {
   const raw = parseBearerToken(header);
   if (!raw) return null;
 
@@ -34,11 +34,12 @@ export async function resolveUserIdFromBearer(
 
   const { data, error } = await admin
     .from("extension_tokens")
-    .select("id, user_id")
+    .select("id, user_id, team_id")
     .eq("token_hash", tokenHash)
     .is("revoked_at", null)
     .maybeSingle();
 
   if (error || !data) return null;
-  return { userId: data.user_id, tokenId: data.id };
+  if (!data.team_id) return null;
+  return { userId: data.user_id, tokenId: data.id, teamId: data.team_id };
 }

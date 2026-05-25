@@ -38,6 +38,13 @@ const COL_IN_KEYS: Record<string, string> = {
   tags: "col_in_tags",
 };
 
+function teamQs(teamId: string, search?: URLSearchParams): string {
+  const q = search ?? new URLSearchParams();
+  q.set("teamId", teamId);
+  const s = q.toString();
+  return s ? `?${s}` : "";
+}
+
 function appendListFilters(search: URLSearchParams, filters?: JobFilters): void {
   if (filters?.q) search.set("q", filters.q);
   if (filters?.tags?.length) search.set("tags", filters.tags.join(","));
@@ -61,13 +68,12 @@ function appendListFilters(search: URLSearchParams, filters?: JobFilters): void 
   }
 }
 
-function toQuery(filters?: JobFilters): string {
+function toQuery(teamId: string, filters?: JobFilters): string {
   const search = new URLSearchParams();
   appendListFilters(search, filters);
   if (filters?.page) search.set("page", String(filters.page));
   if (filters?.page_size) search.set("page_size", String(filters.page_size));
-  const qs = search.toString();
-  return qs ? `?${qs}` : "";
+  return teamQs(teamId, search);
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -91,68 +97,87 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function fetchColumnValues(
+  teamId: string,
   field: JobFilterableField,
   context?: JobFilters,
 ): Promise<ColumnValuesResponse> {
   const search = new URLSearchParams();
   search.set("field", field);
   appendListFilters(search, context);
-  const qs = search.toString();
-  return request<ColumnValuesResponse>(`/api/jobs/meta/column-values?${qs}`);
+  return request<ColumnValuesResponse>(`/api/jobs/meta/column-values${teamQs(teamId, search)}`);
 }
 
-export async function fetchJobs(filters?: JobFilters): Promise<JobListResponse> {
-  return timedRequest<JobListResponse>("jobs fetch", `/api/jobs${toQuery(filters)}`);
+export async function fetchJobs(teamId: string, filters?: JobFilters): Promise<JobListResponse> {
+  return timedRequest<JobListResponse>("jobs fetch", `/api/jobs${toQuery(teamId, filters)}`);
 }
 
-export async function fetchDashboard(): Promise<DashboardSummary> {
-  return timedRequest<DashboardSummary>("dashboard fetch", "/api/jobs/dashboard/summary");
+export async function fetchDashboard(teamId: string): Promise<DashboardSummary> {
+  return timedRequest<DashboardSummary>(
+    "dashboard fetch",
+    `/api/jobs/dashboard/summary${teamQs(teamId)}`,
+  );
 }
 
-export async function fetchCapturedByUsers(): Promise<string[]> {
+export async function fetchCapturedByUsers(teamId: string): Promise<string[]> {
   const res = await timedRequest<{ users: string[] }>(
     "users fetch",
-    "/api/jobs/meta/captured-by",
+    `/api/jobs/meta/captured-by${teamQs(teamId)}`,
   );
   return res.users;
 }
 
-export async function fetchTags(): Promise<Tag[]> {
-  return timedRequest<Tag[]>("tags fetch", "/api/tags");
+export async function fetchTags(teamId: string): Promise<Tag[]> {
+  return timedRequest<Tag[]>("tags fetch", `/api/tags${teamQs(teamId)}`);
 }
 
-export async function fetchJob(jobId: string): Promise<JobListItem> {
-  return timedRequest<JobListItem>("job fetch", `/api/jobs/${jobId}`);
+export async function fetchJob(teamId: string, jobId: string): Promise<JobListItem> {
+  return timedRequest<JobListItem>("job fetch", `/api/jobs/${jobId}${teamQs(teamId)}`);
 }
 
-export async function createTag(payload: TagCreate): Promise<Tag> {
-  return request<Tag>("/api/tags", { method: "POST", body: JSON.stringify(payload) });
+export async function createTag(teamId: string, payload: TagCreate): Promise<Tag> {
+  return request<Tag>(`/api/tags${teamQs(teamId)}`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
-export async function updateTag(tagId: string, payload: TagPatch): Promise<Tag> {
-  return request<Tag>(`/api/tags/${tagId}`, { method: "PATCH", body: JSON.stringify(payload) });
+export async function updateTag(teamId: string, tagId: string, payload: TagPatch): Promise<Tag> {
+  return request<Tag>(`/api/tags/${tagId}${teamQs(teamId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
 
-export async function deleteTag(tagId: string): Promise<void> {
-  await request<void>(`/api/tags/${tagId}`, { method: "DELETE" });
+export async function deleteTag(teamId: string, tagId: string): Promise<void> {
+  await request<void>(`/api/tags/${tagId}${teamQs(teamId)}`, { method: "DELETE" });
 }
 
-export async function addTagToJob(jobId: string, tagId: string): Promise<void> {
-  await request<void>(`/api/jobs/${jobId}/tags/${tagId}`, { method: "POST" });
+export async function addTagToJob(teamId: string, jobId: string, tagId: string): Promise<void> {
+  await request<void>(`/api/jobs/${jobId}/tags/${tagId}${teamQs(teamId)}`, { method: "POST" });
 }
 
-export async function removeTagFromJob(jobId: string, tagId: string): Promise<void> {
-  await request<void>(`/api/jobs/${jobId}/tags/${tagId}`, { method: "DELETE" });
+export async function removeTagFromJob(
+  teamId: string,
+  jobId: string,
+  tagId: string,
+): Promise<void> {
+  await request<void>(`/api/jobs/${jobId}/tags/${tagId}${teamQs(teamId)}`, {
+    method: "DELETE",
+  });
 }
 
-export async function bulkDeleteJobs(jobIds: string[]): Promise<BulkDeleteResponse> {
-  return request<BulkDeleteResponse>("/api/jobs/bulk", {
+export async function bulkDeleteJobs(
+  teamId: string,
+  jobIds: string[],
+): Promise<BulkDeleteResponse> {
+  return request<BulkDeleteResponse>(`/api/jobs/bulk${teamQs(teamId)}`, {
     method: "DELETE",
     body: JSON.stringify({ job_ids: jobIds }),
   });
 }
 
 export async function patchJob(
+  teamId: string,
   jobId: string,
   payload: Partial<{
     captured_by: string;
@@ -164,24 +189,24 @@ export async function patchJob(
     notes: string;
   }>,
 ): Promise<JobListItem> {
-  return request<JobListItem>(`/api/jobs/${jobId}`, {
+  return request<JobListItem>(`/api/jobs/${jobId}${teamQs(teamId)}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
 }
 
-export async function fetchJobJd(jobId: string): Promise<JDContent> {
-  return request<JDContent>(`/api/jobs/${jobId}/jd`);
+export async function fetchJobJd(teamId: string, jobId: string): Promise<JDContent> {
+  return request<JDContent>(`/api/jobs/${jobId}/jd${teamQs(teamId)}`);
 }
 
-export async function uploadJobResume(jobId: string, file: File): Promise<void> {
+export async function uploadJobResume(teamId: string, jobId: string, file: File): Promise<void> {
   const form = new FormData();
   form.append("file", file);
-  await request(`/api/jobs/${jobId}/resume`, { method: "POST", body: form });
+  await request(`/api/jobs/${jobId}/resume${teamQs(teamId)}`, { method: "POST", body: form });
 }
 
-export async function unlinkJobResume(jobId: string): Promise<void> {
-  await request<void>(`/api/jobs/${jobId}/resume`, { method: "DELETE" });
+export async function unlinkJobResume(teamId: string, jobId: string): Promise<void> {
+  await request<void>(`/api/jobs/${jobId}/resume${teamQs(teamId)}`, { method: "DELETE" });
 }
 
 export async function fetchResumePreview(resumeFileId: string): Promise<string> {
@@ -194,6 +219,7 @@ export function resumeDownloadUrl(resumeFileId: string): string {
 }
 
 export async function fetchTimeline(
+  teamId: string,
   bucket: TimelineBucketKey,
   range?: { start?: string; end?: string },
   tableHighlight?: JobFilters,
@@ -205,8 +231,84 @@ export async function fetchTimeline(
   appendListFilters(q, tableHighlight);
   return timedRequest<TimelineResponse>(
     "timeline fetch",
-    `/api/analytics/timeline?${q.toString()}`,
+    `/api/analytics/timeline${teamQs(teamId, q)}`,
     undefined,
     25_000,
   );
+}
+
+export type TeamsListResponse = {
+  my_teams: {
+    id: string;
+    name: string;
+    owner_email: string | null;
+    role: string;
+    is_owner: boolean;
+  }[];
+  other_teams: {
+    id: string;
+    name: string;
+    owner_email: string | null;
+    join_status: "none" | "pending";
+  }[];
+};
+
+export async function fetchTeams(): Promise<TeamsListResponse> {
+  return request<TeamsListResponse>("/api/teams");
+}
+
+export async function createTeam(name: string): Promise<{ team: { id: string; name: string } }> {
+  return request("/api/teams", { method: "POST", body: JSON.stringify({ name }) });
+}
+
+export async function requestJoinTeam(teamId: string): Promise<{ message: string }> {
+  return request(`/api/teams/${teamId}/join-request`, { method: "POST" });
+}
+
+export type TeamMembersResponse = {
+  team_name: string;
+  is_owner: boolean;
+  members: {
+    id: string;
+    user_id: string;
+    role: string;
+    joined_at: string;
+    email: string | null;
+    display_name: string | null;
+  }[];
+  pending_requests: { id: string; requester_email: string; created_at: string }[];
+};
+
+export async function fetchTeamMembers(teamId: string): Promise<TeamMembersResponse> {
+  return request(`/api/team/${teamId}/members`);
+}
+
+export async function removeTeamMember(teamId: string, userId: string): Promise<void> {
+  await request(`/api/teams/${teamId}/members/${userId}`, { method: "DELETE" });
+}
+
+export async function rejectJoinRequest(requestId: string): Promise<void> {
+  await request(`/api/team-join-requests/${requestId}/reject`, { method: "POST" });
+}
+
+export async function approveJoinRequest(
+  requestId: string,
+  token: string,
+): Promise<{ team_id: string }> {
+  return request(`/api/team-join-requests/${requestId}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+}
+
+export async function renameTeam(teamId: string, name: string): Promise<void> {
+  await request(`/api/team/${teamId}/members`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function fetchPostLoginPath(): Promise<string> {
+  const res = await request<{ path: string }>("/api/teams/redirect-path");
+  return res.path;
 }

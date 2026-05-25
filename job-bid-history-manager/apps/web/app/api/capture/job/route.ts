@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     );
   }
 
-  let tokenUser: { userId: string; tokenId: string } | null = null;
+  let tokenUser: { userId: string; tokenId: string; teamId: string } | null = null;
   try {
     tokenUser = await resolveUserIdFromBearer(request.headers.get("authorization"));
   } catch (err) {
@@ -75,6 +75,7 @@ export async function POST(request: Request) {
 
   try {
     const saved = await saveCapturedJob(admin, {
+      teamId: tokenUser.teamId,
       userId: tokenUser.userId,
       capturedBy,
       capturedText,

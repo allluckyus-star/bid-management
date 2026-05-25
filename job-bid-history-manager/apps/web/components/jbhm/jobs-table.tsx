@@ -51,6 +51,7 @@ import {
 } from "@/context/table-cell-edit";
 import { TableInteractionContext } from "@/context/table-interaction";
 import { useHoldKey } from "@/hooks/use-interaction-hold";
+import { useTeamId } from "@/context/team-context";
 import { fetchJob, fetchJobJd, fetchResumePreview, patchJob } from "@/lib/api/client";
 import { notifyActionSuccess, notifyLoadError } from "@/lib/jbhm/notify";
 import {
@@ -105,6 +106,7 @@ export function JobsTable({
   setInteractionHold,
   interactionHeld,
 }: Props) {
+  const teamId = useTeamId();
   const [filterField, setFilterField] = useState<JobFilterableField | null>(null);
   const [searchField, setSearchField] = useState<JobSortField | null>(null);
   const [jdDialog, setJdDialog] = useState<{
@@ -143,21 +145,24 @@ export function JobsTable({
   useHoldKey(setInteractionHold, "notes-dialog", !!notesDialog);
   useHoldKey(setInteractionHold, "resume-dialog", !!resumeDialog);
 
-  const saveField = useCallback(async (jobId: string, patch: Parameters<typeof patchJob>[1]) => {
-    try {
-      await patchJob(jobId, patch);
-      notifyActionSuccess("Saved");
-      onRefreshRef.current();
-    } catch (e) {
-      notifyLoadError(e instanceof Error ? e.message : "Save failed");
-      throw e;
-    }
-  }, []);
+  const saveField = useCallback(
+    async (jobId: string, patch: Parameters<typeof patchJob>[2]) => {
+      try {
+        await patchJob(teamId, jobId, patch);
+        notifyActionSuccess("Saved");
+        onRefreshRef.current();
+      } catch (e) {
+        notifyLoadError(e instanceof Error ? e.message : "Save failed");
+        throw e;
+      }
+    },
+    [teamId],
+  );
 
   const openJd = useCallback(async (job: JobListItem) => {
     setOverlayBusy(true);
     try {
-      const jd = await fetchJobJd(job.id);
+      const jd = await fetchJobJd(teamId, job.id);
       setJdDialog({
         text: jd.cleaned_text,
         modelName: jd.model_name,
@@ -167,7 +172,7 @@ export function JobsTable({
     } finally {
       setOverlayBusy(false);
     }
-  }, []);
+  }, [teamId]);
 
   const openNotes = useCallback(async (job: JobListItem) => {
     setNotesDialog({
@@ -175,18 +180,18 @@ export function JobsTable({
       body: job.notes ?? job.notes_preview ?? "",
     });
     try {
-      const detail = await fetchJob(job.id);
+      const detail = await fetchJob(teamId, job.id);
       setNotesDialog({ jobId: job.id, body: detail.notes ?? "" });
     } catch (e) {
       notifyLoadError(e instanceof Error ? e.message : "Failed to load notes");
     }
-  }, []);
+  }, [teamId]);
 
   const saveNotes = async () => {
     if (!notesDialog) return;
     setNotesSaving(true);
     try {
-      await patchJob(notesDialog.jobId, { notes: notesDialog.body });
+      await patchJob(teamId, notesDialog.jobId, { notes: notesDialog.body });
       notifyActionSuccess("Notes saved");
       onRefresh();
       setNotesDialog(null);

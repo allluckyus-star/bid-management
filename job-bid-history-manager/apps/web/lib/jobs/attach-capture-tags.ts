@@ -6,7 +6,7 @@ const ALLOWED = new Set<string>(CAPTURE_TAG_NAMES);
 /** Upsert capture tags and link to job; never throws — logs on failure. */
 export async function attachCaptureTags(
   admin: SupabaseClient,
-  opts: { userId: string; jobId: string; tagNames: string[] },
+  opts: { teamId: string; userId: string; jobId: string; tagNames: string[] },
 ): Promise<void> {
   const names = [
     ...new Set(
@@ -24,6 +24,7 @@ export async function attachCaptureTags(
       const { data: existing } = await admin
         .from("tags")
         .select("id")
+        .eq("team_id", opts.teamId)
         .eq("name", name)
         .maybeSingle();
 
@@ -32,7 +33,12 @@ export async function attachCaptureTags(
       } else {
         const { data: inserted, error: insertErr } = await admin
           .from("tags")
-          .insert({ user_id: opts.userId, name, color: null })
+          .insert({
+            team_id: opts.teamId,
+            user_id: opts.userId,
+            name,
+            color: null,
+          })
           .select("id")
           .single();
 
@@ -40,6 +46,7 @@ export async function attachCaptureTags(
           const { data: retry } = await admin
             .from("tags")
             .select("id")
+            .eq("team_id", opts.teamId)
             .eq("name", name)
             .maybeSingle();
           tagId = retry?.id ?? null;
