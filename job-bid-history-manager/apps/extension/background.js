@@ -1,4 +1,4 @@
-importScripts("config.js", "prompt-defaults.js", "storage.js", "api.js");
+importScripts("config.js", "prompt-defaults.js", "storage.js", "api.js", "download-path.js");
 
 const CHATGPT_URL_PATTERNS = [
   "https://chatgpt.com/*",
@@ -326,6 +326,16 @@ async function runGenerateChatGptPrompt(tabOverride) {
   return opt;
 }
 
+async function downloadFilenameWithUserFolder(leafFilename) {
+  const status = await getExtensionStatus();
+  const me = {
+    display_name: status.display_name,
+    email: status.email,
+    captured_by: status.captured_by,
+  };
+  return resolveDownloadFilename(me, leafFilename);
+}
+
 async function downloadManualDocxFromGptText(text, tabId) {
   const settings = await loadExtensionSettings();
   if (!settings.captureToken) throw new Error("Add capture token in Settings.");
@@ -351,9 +361,10 @@ async function downloadManualDocxFromGptText(text, tabId) {
   );
 
   const dataUrl = await blobToDownloadDataUrl(blob);
-  await chrome.downloads.download({ url: dataUrl, filename, saveAs: false });
+  const downloadPath = await downloadFilenameWithUserFolder(filename);
+  await chrome.downloads.download({ url: dataUrl, filename: downloadPath, saveAs: false });
 
-  notify("Manual JD", `Downloaded ${filename}`);
+  notify("Manual JD", `Downloaded to ${downloadPath}`);
   if (chatTabId) {
     await showTabToast({ id: chatTabId }, `DOCX downloaded: ${filename}`, "success");
   }
@@ -417,13 +428,15 @@ async function downloadLastExport() {
     throw new Error("No export ready yet. Run ChatGPT Prompt or send a GPT result first.");
   }
 
+  const leaf = opt.lastFilename || "resume.docx";
+  const downloadPath = await downloadFilenameWithUserFolder(leaf);
   const url = `${settings.apiBaseUrl}/api/team/${teamId}/resume-exports/${exportId}/download`;
   await chrome.downloads.download({
     url,
-    filename: opt.lastFilename || "resume.docx",
+    filename: downloadPath,
     headers: [{ name: "Authorization", value: `Bearer ${settings.captureToken}` }],
   });
-  return { ok: true };
+  return { ok: true, filename: downloadPath };
 }
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -508,6 +521,30 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           tabId: _sender?.tab?.id,
         });
         sendResponse({ status: "ok", result, manual: result?.manual === true });
+      } catch (err) {
+        sendResponse({ status: "error", detail: err?.message || String(err) });
+      }
+    })();
+    return true;
+  }
+
+  if (type === "DOWNLOAD_BLOB") {
+    (async () => {
+      try {
+        const buffer = message.buffer;
+        if (!buffer) {
+          sendResponse({ status: "error", detail: "Missing file data" });
+          return;
+        }
+        const leaf = message.leafFilename || "resume.docx";
+        const mimeType =
+          message.mimeType ||
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        const blob = new Blob([buffer], { type: mimeType });
+        const dataUrl = await blobToDownloadDataUrl(blob);
+        const downloadPath = await downloadFilenameWithUserFolder(leaf);
+        await chrome.downloads.download({ url: dataUrl, filename: downloadPath, saveAs: false });
+        sendResponse({ status: "ok", downloadPath });
       } catch (err) {
         sendResponse({ status: "error", detail: err?.message || String(err) });
       }

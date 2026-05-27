@@ -20,6 +20,7 @@ import {
   unlinkJobResume,
   uploadJobResume,
 } from "@/lib/api/client";
+import { downloadResumeWithSubfolder } from "@/lib/jbhm/extension-download";
 import { notifyActionSuccess, notifyLoadError } from "@/lib/jbhm/notify";
 import { truncate } from "@/lib/utils";
 
@@ -63,6 +64,23 @@ export function ResumeCell({ job, busy, onUpdated, onPreview }: Props) {
       onUpdated();
     } catch (e) {
       notifyLoadError(e instanceof Error ? e.message : "Unlink failed");
+    }
+  };
+
+  const handleDownload = async () => {
+    if (!job.resume) return;
+    try {
+      const result = await downloadResumeWithSubfolder(
+        resumeDownloadUrl(job.resume.id),
+        job.resume.original_filename,
+      );
+      if (result.usedExtension && result.downloadPath) {
+        notifyActionSuccess(`Downloaded to ${result.downloadPath}`);
+      } else {
+        notifyActionSuccess("Download started");
+      }
+    } catch (e) {
+      notifyLoadError(e instanceof Error ? e.message : "Download failed");
     }
   };
 
@@ -137,10 +155,14 @@ export function ResumeCell({ job, busy, onUpdated, onPreview }: Props) {
               >
                 Preview
               </Button>
-              <Button variant="outline" size="sm" className="h-6 px-2 text-[10px]" asChild>
-                <a href={resumeDownloadUrl(job.resume.id)} download={job.resume.original_filename}>
-                  Download
-                </a>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 text-[10px]"
+                disabled={busy}
+                onClick={() => void handleDownload()}
+              >
+                Download
               </Button>
               <Button
                 variant="ghost"

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Job Bid History Capture",
-  "version": "0.7.4",
+  "version": "0.7.6",
   "description": "Capture job pages, optimize resumes via ChatGPT, and sync to your team dashboard.",
   "permissions": ["storage", "activeTab", "scripting", "contextMenus", "notifications", "downloads"],
   "options_ui": {
@@ -54,6 +54,15 @@
         "https://chat.openai.com/*"
       ],
       "js": ["chatgpt-content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*",
+        "https://bid-management-peach.vercel.app/*"
+      ],
+      "js": ["web-bridge.js"],
       "run_at": "document_idle"
     }
   ],
