@@ -12,6 +12,9 @@ import {
 } from "@/lib/teams/access";
 import { hasServiceRoleKey } from "@/lib/supabase/admin";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function OPTIONS(request: Request) {
   return optionsResponse(request);
 }
@@ -93,10 +96,8 @@ export async function POST(request: Request) {
     if (err instanceof TeamAccessError) {
       return jsonWithCors(request, { error: err.message }, err.status);
     }
-    return jsonWithCors(
-      request,
-      { error: err instanceof Error ? err.message : "Failed to build prompt" },
-      400,
-    );
+    const message = err instanceof Error ? err.message : "Failed to build prompt";
+    console.error("[chatgpt-prompt]", message, err);
+    return jsonWithCors(request, { error: message }, 400);
   }
 }

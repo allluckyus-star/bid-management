@@ -1,7 +1,31 @@
-import mammoth from "mammoth";
-import { PDFParse } from "pdf-parse";
-
 import { createAdminClient } from "@/lib/supabase/admin";
+
+function isMissingRelationError(error: { message?: string; code?: string } | null) {
+  const msg = String(error?.message ?? "").toLowerCase();
+  return (
+    error?.code === "42P01" ||
+    error?.code === "PGRST205" ||
+    msg.includes("does not exist") ||
+    msg.includes("could not find the table")
+  );
+}
+
+async function extractDocxText(bytes: Buffer): Promise<string> {
+  const mammoth = await import("mammoth");
+  const parsed = await mammoth.extractRawText({ buffer: bytes });
+  return String(parsed.value ?? "").trim();
+}
+
+async function extractPdfText(bytes: Buffer): Promise<string> {
+  const { PDFParse } = await import("pdf-parse");
+  const parser = new PDFParse({ data: bytes });
+  try {
+    const parsed = await parser.getText();
+    return String(parsed.text ?? "").trim();
+  } finally {
+    await parser.destroy();
+  }
+}
 
 export type JdMode = "latest" | "history" | "manual";
 
@@ -70,17 +94,10 @@ export async function createManualJdInput(input: {
 
     if (lower.endsWith(".docx")) {
       sourceType = "docx";
-      const parsed = await mammoth.extractRawText({ buffer: bytes });
-      extractedText = String(parsed.value ?? "").trim();
+      extractedText = await extractDocxText(bytes);
     } else if (lower.endsWith(".pdf")) {
       sourceType = "pdf";
-      const parser = new PDFParse({ data: bytes });
-      try {
-        const parsed = await parser.getText();
-        extractedText = String(parsed.text ?? "").trim();
-      } finally {
-        await parser.destroy();
-      }
+      extractedText = await extractPdfText(bytes);
     } else {
       throw new Error("Only .docx or .pdf files are supported for JD upload.");
     }
@@ -184,12 +201,21 @@ export async function getTeamJdSelectionView(teamId: string, userId: string) {
 
 export async function resolveJdSourceForPrompt(teamId: string, userId: string): Promise<JdSelectionResolved> {
   const admin = createAdminClient();
-  const { data: pref } = await admin
+  const { data: pref, error: prefError } = await admin
     .from("team_jd_preferences")
     .select("mode, history_job_id, manual_input_id")
     .eq("team_id", teamId)
     .eq("user_id", userId)
     .maybeSingle();
+
+  if (prefError) {
+    if (!isMissingRelationError(prefError)) {
+      throw new Error(prefError.message);
+    }
+    throw new Error(
+      "JD settings tables are missing. Run Supabase migration 009_jd_source_selection.sql on production.",
+    );
+  }
 
   const mode = (pref?.mode as JdMode | undefined) ?? "latest";
   if (mode === "manual") {

@@ -1,3 +1,16 @@
+function parseApiErrorBody(text, status) {
+  const raw = String(text || "").trim();
+  if (raw.startsWith("<!DOCTYPE") || raw.startsWith("<html") || raw.includes("__next_error__")) {
+    return `Server error (${status}). Redeploy the app and run Supabase migration 009_jd_source_selection.sql.`;
+  }
+  try {
+    const json = JSON.parse(raw);
+    return json.error || json.detail || `Request failed (${status})`;
+  } catch {
+    return raw.slice(0, 240) || `Request failed (${status})`;
+  }
+}
+
 /**
  * @param {string} baseUrl
  * @param {string} token
@@ -8,16 +21,10 @@ async function fetchExtensionMe(baseUrl, token) {
     headers: { Authorization: `Bearer ${token}` },
   });
   const text = await res.text();
-  let body = {};
-  try {
-    body = text ? JSON.parse(text) : {};
-  } catch {
-    body = { error: text || `HTTP ${res.status}` };
-  }
   if (!res.ok) {
-    throw new Error(body.error || `Connection failed (${res.status})`);
+    throw new Error(parseApiErrorBody(text, res.status));
   }
-  return body;
+  return text ? JSON.parse(text) : {};
 }
 
 /**
@@ -45,16 +52,10 @@ async function postCaptureJob(baseUrl, token, pageData) {
   });
 
   const text = await res.text();
-  let body = {};
-  try {
-    body = text ? JSON.parse(text) : {};
-  } catch {
-    body = { error: text || `HTTP ${res.status}` };
-  }
   if (!res.ok) {
-    throw new Error(body.error || `Capture failed (${res.status})`);
+    throw new Error(parseApiErrorBody(text, res.status));
   }
-  return body;
+  return text ? JSON.parse(text) : {};
 }
 
 /**
@@ -77,25 +78,12 @@ async function postChatGptPrompt(baseUrl, token, teamId, opts = {}) {
     }),
   });
   const text = await res.text();
-  let body = {};
-  try {
-    body = text ? JSON.parse(text) : {};
-  } catch {
-    body = { error: text || `HTTP ${res.status}` };
-  }
   if (!res.ok) {
-    throw new Error(body.error || `Prompt build failed (${res.status})`);
+    throw new Error(parseApiErrorBody(text, res.status));
   }
-  return body;
+  return text ? JSON.parse(text) : {};
 }
 
-/**
- * @param {string} baseUrl
- * @param {string} token
- * @param {string} teamId
- * @param {string} optimizationId
- * @param {string} gptText
- */
 /**
  * Manual JD mode: render DOCX in memory only (no optimization/export DB rows).
  * @param {string} baseUrl
@@ -119,13 +107,7 @@ async function postRenderDocx(baseUrl, token, teamId, gptText, opts = {}) {
 
   if (!res.ok) {
     const text = await res.text();
-    let body = {};
-    try {
-      body = text ? JSON.parse(text) : {};
-    } catch {
-      body = { error: text || `HTTP ${res.status}` };
-    }
-    throw new Error(body.error || `DOCX render failed (${res.status})`);
+    throw new Error(parseApiErrorBody(text, res.status));
   }
 
   const blob = await res.blob();
@@ -163,14 +145,8 @@ async function postGptResult(baseUrl, token, teamId, optimizationId, gptText) {
     },
   );
   const text = await res.text();
-  let body = {};
-  try {
-    body = text ? JSON.parse(text) : {};
-  } catch {
-    body = { error: text || `HTTP ${res.status}` };
-  }
   if (!res.ok) {
-    throw new Error(body.error || body.detail || `GPT result failed (${res.status})`);
+    throw new Error(parseApiErrorBody(text, res.status));
   }
-  return body;
+  return text ? JSON.parse(text) : {};
 }

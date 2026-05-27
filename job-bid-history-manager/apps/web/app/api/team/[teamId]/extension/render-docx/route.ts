@@ -12,6 +12,9 @@ import {
 } from "@/lib/teams/access";
 import { hasServiceRoleKey } from "@/lib/supabase/admin";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function OPTIONS(request: Request) {
   return optionsResponse(request);
 }
