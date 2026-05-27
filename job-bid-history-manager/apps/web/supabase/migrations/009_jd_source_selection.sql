@@ -1,4 +1,5 @@
 -- Team JD source selection (manual upload/paste, latest captured, or selected history job)
+-- Idempotent: safe to re-run if a previous attempt partially applied.
 
 create table if not exists public.team_jd_manual_inputs (
   id uuid primary key default gen_random_uuid(),
@@ -18,6 +19,7 @@ create index if not exists team_jd_manual_inputs_team_idx
 
 alter table public.team_jd_manual_inputs enable row level security;
 
+drop policy if exists "team_jd_manual_inputs_team_member" on public.team_jd_manual_inputs;
 create policy "team_jd_manual_inputs_team_member"
   on public.team_jd_manual_inputs for all to authenticated
   using (public.is_team_member(team_id))
@@ -39,6 +41,7 @@ create unique index if not exists team_jd_preferences_team_user_unique
 
 alter table public.team_jd_preferences enable row level security;
 
+drop policy if exists "team_jd_preferences_team_member" on public.team_jd_preferences;
 create policy "team_jd_preferences_team_member"
   on public.team_jd_preferences for all to authenticated
   using (public.is_team_member(team_id))
