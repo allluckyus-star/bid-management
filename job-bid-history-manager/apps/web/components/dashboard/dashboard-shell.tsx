@@ -60,6 +60,12 @@ function DashboardShellInner({ teamId }: { teamId: string }) {
               Team
             </Button>
             <Button variant="outline" size="sm" asChild>
+              <Link href={`/team/${teamId}/resumes`}>Resumes</Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/team/${teamId}/jd`}>JD Source</Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
               <Link href={`/team/${teamId}/dashboard/extension`}>
                 <Puzzle className="mr-1 h-4 w-4" />
                 Extension

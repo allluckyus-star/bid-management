@@ -7,31 +7,55 @@
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <header class="popup-header">
-      <img src="icons/icon48.png" alt="" width="32" height="32" class="popup-logo" />
-      <div>
-        <h1>Job Bid Capture</h1>
-        <p class="subtitle">Visible page text → team board</p>
+    <div class="layout">
+      <div class="left-pane">
+        <header class="popup-header">
+          <img src="icons/icon48.png" alt="" width="32" height="32" class="popup-logo" />
+          <div>
+            <h1>Job Bid Capture</h1>
+            <p class="subtitle">Capture JD → ChatGPT resume</p>
+          </div>
+        </header>
+
+        <div id="statusCard" class="status-card" role="status">
+          <span id="statusLabel" class="status-label">Checking…</span>
+          <p id="statusDetail" class="status-detail"></p>
+        </div>
+
+        <button id="captureBtn" type="button" class="primary" disabled>Capture this page</button>
+
+        <button id="promptBtn" type="button" class="secondary" disabled>
+          <span class="button-title">ChatGPT Prompt</span>
+          <span class="shortcut">Alt+W</span>
+        </button>
+
+        <button id="editPromptBtn" type="button" class="secondary">Edit Prompt</button>
+
+        <button id="downloadBtn" type="button" class="secondary" disabled>
+          <span class="button-title">Download DOCX</span>
+          <span class="shortcut">Alt+A</span>
+        </button>
+
+        <div class="link-row">
+          <button id="toggleBtn" type="button" class="link-btn">Enable</button>
+          <button id="openDashboard" type="button" class="link-btn">Dashboard</button>
+          <button id="openSettings" type="button" class="link-btn">Settings</button>
+        </div>
+
+        <p id="hint" class="hint">Capture a job page, upload a default resume, then open ChatGPT.</p>
+        <p id="status" class="status" role="status" aria-live="polite"></p>
       </div>
-    </header>
 
-    <div id="statusCard" class="status-card" role="status">
-      <span id="statusLabel" class="status-label">Checking…</span>
-      <p id="statusDetail" class="status-detail"></p>
+      <div class="right-pane">
+        <label class="editor-label" for="promptEditor">Your prompt rules (editable)</label>
+        <textarea id="promptEditor" spellcheck="false"></textarea>
+        <label class="editor-label" for="promptLocked">Locked suffix (server adds JD + resume + JSON schema)</label>
+        <textarea id="promptLocked" readonly spellcheck="false"></textarea>
+      </div>
     </div>
-
-    <button id="captureBtn" type="button" class="primary" disabled>
-      Capture this page
-    </button>
-
-    <div class="link-row">
-      <button id="openDashboard" type="button" class="link-btn">Open Dashboard</button>
-      <button id="openSettings" type="button" class="link-btn">Settings</button>
-    </div>
-
-    <p id="status" class="status" role="status" aria-live="polite"></p>
 
     <script src="config.js"></script>
+    <script src="prompt-defaults.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

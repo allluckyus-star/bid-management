@@ -16,11 +16,13 @@ export type TeamMembership = {
 };
 
 export function parseTeamIdFromRequest(request: Request): string {
-  const teamId = new URL(request.url).searchParams.get("teamId");
-  if (!teamId?.trim()) {
-    throw new TeamAccessError(400, "teamId query parameter is required");
+  const url = new URL(request.url);
+  const pathMatch = url.pathname.match(/\/api\/team\/([^/]+)/);
+  const teamId = (pathMatch?.[1] ?? url.searchParams.get("teamId"))?.trim();
+  if (!teamId) {
+    throw new TeamAccessError(400, "teamId is required (URL path or ?teamId= query)");
   }
-  return teamId.trim();
+  return teamId;
 }
 
 export async function requireAuthUser() {

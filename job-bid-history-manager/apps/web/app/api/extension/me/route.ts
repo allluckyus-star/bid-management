@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     );
   }
 
-  let tokenUser: { userId: string; tokenId: string } | null = null;
+  let tokenUser: { userId: string; tokenId: string; teamId: string } | null = null;
   try {
     tokenUser = await resolveUserIdFromBearer(request.headers.get("authorization"));
   } catch (err) {
@@ -30,7 +30,11 @@ export async function GET(request: Request) {
 
   try {
     const me = await getExtensionMeForUser(tokenUser.userId);
-    return jsonWithCors(request, { connected: true, ...me });
+    return jsonWithCors(request, {
+      connected: true,
+      ...me,
+      team_id: tokenUser.teamId,
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to load profile";
     return jsonWithCors(request, { error: msg }, 500);

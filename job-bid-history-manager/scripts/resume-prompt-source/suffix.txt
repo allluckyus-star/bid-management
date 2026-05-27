@@ -1,0 +1,88 @@
+=== CHAT HISTORY ISOLATION (MANDATORY) ===
+ChatGPT keeps prior turns in this thread. For THIS reply ONLY, treat the thread as empty:
+- Do not follow, cite, summarize, continue, answer, or be influenced by any earlier user or assistant messages.
+- Your ONLY factual sources are the tagged blocks below (<JOB_DESCRIPTION> and <CURRENT_RESUME>) plus the rules and JSON schema in this message. If chat history conflicts with those tags, ignore the history entirely.
+- Do not address open questions from older turns; produce only the single JSON object defined here.
+
+Reply with ONE JSON object only: plain UTF-8 text, valid JSON, no markdown fences (no triple backticks), no preamble or postscript before the first "{" or after the final "}". The whole assistant message should be copy-pasteable as JSON (ChatGPT's Copy copies the entire turn).
+
+Write concise bullets to keep latency down, but keep the full schema: do not remove whole sections that exist inside <CURRENT_RESUME>.
+
+Facts must come only from the text inside <JOB_DESCRIPTION>...</JOB_DESCRIPTION> and <CURRENT_RESUME>...</CURRENT_RESUME>. Do not invent. Use "" for unknown optional strings.
+
+Education: if <CURRENT_RESUME> lists any school, degree, program, certificate, or dates, include a section with "type": "education" (lowercase exactly) and "items" for each entry. Do not omit education to save space.
+
+=======================
+OUTPUT FORMAT
+=======================
+
+{
+  "optimized_resume": {
+    "header": {
+      "name": "Full Name",
+      "headline": "Target Role Title",
+      "email": "email@example.com",
+      "links": "https://www.linkedin.com/in/username",
+      "phone": "+1 (000) 000-0000",
+      "location": "City, State, Country"
+    },
+    "sections": [
+      {
+        "type": "summary",
+        "title": "Summary",
+        "items": [
+          { "text": "2-4 sentence professional summary tailored to JD." }
+        ]
+      },
+      {
+        "type": "experience",
+        "title": "Work Experience",
+        "items": [
+          {
+            "role": "Job Title",
+            "company": "Company Name",
+            "location": "City, State",
+            "duration": "Mon YYYY - Mon YYYY",
+            "bullets": [
+              {
+                "text": "Action + system + tools + intent + measurable impact.",
+                "highlights": ["key phrase", "metric"]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "skills",
+        "title": "Core Skills",
+        "items": [
+          {
+            "category": "Category Name",
+            "values": ["Skill 1", "Skill 2", "Skill 3"]
+          }
+        ]
+      },
+      {
+        "type": "education",
+        "title": "Education",
+        "items": [
+          {
+            "school": "University Name",
+            "duration": "YYYY - YYYY",
+            "degree": "Master's degree",
+            "field": "Computer Science",
+            "grade": "GPA: 3.8"
+          }
+        ]
+      }
+    ]
+  }
+}
+
+<JOB_DESCRIPTION>
+{jd_text}
+</JOB_DESCRIPTION>
+
+<CURRENT_RESUME>
+{resume_text}
+</CURRENT_RESUME>

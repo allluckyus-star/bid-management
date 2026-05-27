@@ -30,6 +30,7 @@ export async function resolveCapturedByForUser(
 
 export type ExtensionMePayload = {
   user_id: string;
+  team_id: string | null;
   display_name: string | null;
   email: string | null;
   captured_by: string;
@@ -55,6 +56,7 @@ export async function getExtensionMeForUser(userId: string): Promise<ExtensionMe
 
   return {
     user_id: userId,
+    team_id: null,
     display_name,
     email: resolvedEmail,
     captured_by,

@@ -326,3 +326,152 @@ export async function fetchPostLoginPath(): Promise<string> {
   const res = await request<{ path: string }>("/api/teams/redirect-path");
   return res.path;
 }
+
+export type LibraryResumeItem = {
+  id: string;
+  original_filename: string;
+  file_size: number | null;
+  is_default: boolean;
+  uploaded_at: string;
+};
+
+export async function fetchResumeLibrary(teamId: string): Promise<{ items: LibraryResumeItem[] }> {
+  return request(`/api/team/${teamId}/resume-library`);
+}
+
+export async function uploadLibraryResume(
+  teamId: string,
+  file: File,
+  setDefault: boolean,
+): Promise<LibraryResumeItem> {
+  const form = new FormData();
+  form.append("file", file);
+  if (setDefault) form.append("set_default", "1");
+  return request(`/api/team/${teamId}/resume-library`, { method: "POST", body: form });
+}
+
+export async function setLibraryResumeDefault(teamId: string, resumeId: string): Promise<void> {
+  await request(`/api/team/${teamId}/resume-library/${resumeId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ is_default: true }),
+  });
+}
+
+export async function deleteLibraryResume(teamId: string, resumeId: string): Promise<void> {
+  await request(`/api/team/${teamId}/resume-library/${resumeId}`, { method: "DELETE" });
+}
+
+export type CreateOptimizationResponse = {
+  optimization_id: string;
+  prompt_text: string;
+};
+
+export async function createResumeOptimization(
+  teamId: string,
+  jobId: string,
+): Promise<CreateOptimizationResponse> {
+  return request(`/api/team/${teamId}/jobs/${jobId}/resume-optimizations`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export type TeamJdManualItem = {
+  id: string;
+  source_type: "text" | "docx" | "pdf";
+  title: string | null;
+  original_filename: string | null;
+  created_at: string;
+  label: string;
+};
+
+export type TeamJdHistoryItem = {
+  id: string;
+  company_name: string | null;
+  captured_by: string | null;
+  job_title: string | null;
+  captured_at: string | null;
+  jd_preview: string;
+  has_jd: boolean;
+};
+
+export type TeamJdSelectionView = {
+  selection: {
+    mode: "latest" | "history" | "manual";
+    history_job_id: string | null;
+    manual_input_id: string | null;
+    updated_at: string | null;
+  };
+  manual_items: TeamJdManualItem[];
+  history_items: TeamJdHistoryItem[];
+};
+
+export async function fetchTeamJdSettings(teamId: string): Promise<TeamJdSelectionView> {
+  return request(`/api/team/${teamId}/jd-settings`);
+}
+
+export async function setTeamJdMode(
+  teamId: string,
+  payload: {
+    mode: "latest" | "history" | "manual";
+    history_job_id?: string | null;
+    manual_input_id?: string | null;
+  },
+): Promise<void> {
+  await request(`/api/team/${teamId}/jd-settings`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createManualJdSource(
+  teamId: string,
+  payload: { title?: string; text?: string; file?: File | null },
+): Promise<TeamJdManualItem> {
+  const form = new FormData();
+  if (payload.title) form.append("title", payload.title);
+  if (payload.text) form.append("text", payload.text);
+  if (payload.file) form.append("file", payload.file);
+  const res = await request<{ item: TeamJdManualItem }>(`/api/team/${teamId}/jd-settings`, {
+    method: "POST",
+    body: form,
+  });
+  return res.item;
+}
+
+export function resumeExportDownloadUrl(teamId: string, exportId: string): string {
+  return `/api/team/${teamId}/resume-exports/${exportId}/download`;
+}
+
+export const PENDING_OPTIMIZATION_KEY = "jbhm_pending_optimization";
+
+export function savePendingOptimization(data: {
+  teamId: string;
+  jobId: string;
+  optimizationId: string;
+  promptText: string;
+}) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(PENDING_OPTIMIZATION_KEY, JSON.stringify(data));
+}
+
+export function readPendingOptimization(): {
+  teamId: string;
+  jobId: string;
+  optimizationId: string;
+  promptText: string;
+} | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(PENDING_OPTIMIZATION_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as {
+      teamId: string;
+      jobId: string;
+      optimizationId: string;
+      promptText: string;
+    };
+  } catch {
+    return null;
+  }
+}
