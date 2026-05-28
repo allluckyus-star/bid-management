@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { DashboardCardsSection } from "@/components/dashboard/dashboard-cards-section";
+import { DashboardRefreshBar } from "@/components/dashboard/dashboard-refresh-bar";
 import { FiltersSection } from "@/components/dashboard/filters-section";
 import { JobsTableSection } from "@/components/dashboard/jobs-table-section";
 import { TimelineChartSection } from "@/components/dashboard/timeline-chart-section";
@@ -28,6 +29,7 @@ export function DashboardOverview() {
 
   return (
     <PageContainer>
+      <DashboardRefreshBar />
       <DashboardCardsSection paused={isInteractionHeld()} />
 
       <TimelineChartSection dark={dark} />

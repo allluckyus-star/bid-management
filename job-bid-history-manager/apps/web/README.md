@@ -37,4 +37,22 @@ Capture rejects requests when:
 - `npm run dev` — development
 - `npm run build:web` — production build
 
+## Vercel / capture performance
+
+On **Vercel Hobby**, keep serverless capture routes light:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SYNC_CAPTURE_EXTRACTION` | `false` | When false, `/api/capture/job` uses heuristic extraction only (no Groq call). |
+| `ENABLE_REALTIME_INVALIDATION` | `false` | When false, skips Supabase realtime broadcast during capture. |
+| `GROQ_MAX_CAPTURE_CHARS` | `10000` | Caps text sent to Groq when sync extraction is enabled. |
+
+Extension sends at most **30,000** characters of visible text per capture. Set `SYNC_CAPTURE_EXTRACTION=true` only when you explicitly need AI fields filled during capture.
+
+## Free-tier safe mode (client)
+
+Set `NEXT_PUBLIC_FREE_TIER_SAFE_MODE=true` (default) to disable dashboard background polling and show a manual **Refresh** bar. Pair with extension review-first capture.
+
+Full checklist: [docs/FREE-TIER-SAFETY.md](../../docs/FREE-TIER-SAFETY.md).
+
 Deploy: [docs/PRE-DEPLOY.md](../../docs/PRE-DEPLOY.md).

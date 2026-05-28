@@ -8,6 +8,18 @@
  * @property {string|null} usernameValidatedAt
  */
 
+const EXTENSION_STATUS_CACHE_KEY = "extensionStatusCache";
+const EXTENSION_STATUS_CACHE_AT_KEY = "extensionStatusCacheAt";
+const USERNAME_VALIDATION_CACHE_KEY = "usernameValidationCache";
+const USERNAME_VALIDATION_CACHE_AT_KEY = "usernameValidationCacheAt";
+const LAST_CAPTURE_URL_KEY = "lastCaptureUrl";
+const LAST_CAPTURE_AT_KEY = "lastCaptureAt";
+const PROMPT_TEMPLATE_LOCAL_KEY = "promptTemplateLocal";
+
+function statusCacheTtlMs() {
+  return JBHM_CONFIG.STATUS_CACHE_TTL_MS ?? 5 * 60 * 1000;
+}
+
 function getApiBaseUrl(apiEnv) {
   return apiEnv === "local"
     ? JBHM_CONFIG.LOCAL_URL
@@ -57,19 +69,133 @@ async function loadExtensionSettings() {
 
 async function saveExtensionSettings(patch) {
   const next = {};
+  let clearStatusCache = false;
   if (patch.captureToken !== undefined) {
     next.captureToken = patch.captureToken.trim();
+    clearStatusCache = true;
   }
   if (patch.apiEnv !== undefined) {
     next.apiEnv = patch.apiEnv === "local" ? "local" : "production";
+    clearStatusCache = true;
   }
   if (patch.username !== undefined) {
     next.username = String(patch.username || "").trim().toLowerCase();
+    clearStatusCache = true;
   }
   if (patch.usernameValidatedAt !== undefined) {
     next.usernameValidatedAt = patch.usernameValidatedAt || null;
+    clearStatusCache = true;
   }
   await chrome.storage.local.set(next);
+  if (clearStatusCache) {
+    await clearExtensionStatusCache();
+    await clearUsernameValidationCache();
+  }
+}
+
+function usernameValidationTtlMs() {
+  return JBHM_CONFIG.USERNAME_VALIDATION_CACHE_TTL_MS ?? 10 * 60 * 1000;
+}
+
+/** Non-reversible short fingerprint — never store raw token in cache keys. */
+async function tokenFingerprint(token) {
+  const t = String(token || "");
+  if (t.length < 8) return "none";
+  let h = 0;
+  for (let i = 0; i < t.length; i += 1) {
+    h = (Math.imul(31, h) + t.charCodeAt(i)) | 0;
+  }
+  return `fp_${(h >>> 0).toString(16)}`;
+}
+
+async function getUsernameValidationCache(settings) {
+  const fp = await tokenFingerprint(settings.captureToken);
+  const data = await chrome.storage.local.get({
+    [USERNAME_VALIDATION_CACHE_KEY]: null,
+    [USERNAME_VALIDATION_CACHE_AT_KEY]: 0,
+  });
+  const cache = data[USERNAME_VALIDATION_CACHE_KEY];
+  const at = Number(data[USERNAME_VALIDATION_CACHE_AT_KEY]) || 0;
+  if (!cache || cache.fingerprint !== fp || cache.username !== settings.username) return null;
+  if (Date.now() - at > usernameValidationTtlMs()) return null;
+  return cache;
+}
+
+async function setUsernameValidationCache(settings) {
+  const fp = await tokenFingerprint(settings.captureToken);
+  await chrome.storage.local.set({
+    [USERNAME_VALIDATION_CACHE_KEY]: {
+      fingerprint: fp,
+      username: settings.username,
+      validated: true,
+    },
+    [USERNAME_VALIDATION_CACHE_AT_KEY]: Date.now(),
+  });
+}
+
+async function clearUsernameValidationCache() {
+  await chrome.storage.local.remove([
+    USERNAME_VALIDATION_CACHE_KEY,
+    USERNAME_VALIDATION_CACHE_AT_KEY,
+  ]);
+}
+
+async function getCachedExtensionStatus() {
+  const data = await chrome.storage.local.get({
+    [EXTENSION_STATUS_CACHE_KEY]: null,
+    [EXTENSION_STATUS_CACHE_AT_KEY]: 0,
+  });
+  return {
+    status: data[EXTENSION_STATUS_CACHE_KEY],
+    cachedAt: Number(data[EXTENSION_STATUS_CACHE_AT_KEY]) || 0,
+  };
+}
+
+async function setCachedExtensionStatus(status) {
+  await chrome.storage.local.set({
+    [EXTENSION_STATUS_CACHE_KEY]: status,
+    [EXTENSION_STATUS_CACHE_AT_KEY]: Date.now(),
+  });
+}
+
+function isExtensionStatusCacheFresh(cachedAt) {
+  const at = Number(cachedAt) || 0;
+  if (!at) return false;
+  return Date.now() - at < statusCacheTtlMs();
+}
+
+async function clearExtensionStatusCache() {
+  await chrome.storage.local.remove([
+    EXTENSION_STATUS_CACHE_KEY,
+    EXTENSION_STATUS_CACHE_AT_KEY,
+  ]);
+}
+
+async function getLastCapture() {
+  const data = await chrome.storage.local.get({
+    [LAST_CAPTURE_URL_KEY]: "",
+    [LAST_CAPTURE_AT_KEY]: 0,
+  });
+  return {
+    url: String(data[LAST_CAPTURE_URL_KEY] || ""),
+    at: Number(data[LAST_CAPTURE_AT_KEY]) || 0,
+  };
+}
+
+async function setLastCapture(url) {
+  await chrome.storage.local.set({
+    [LAST_CAPTURE_URL_KEY]: String(url || ""),
+    [LAST_CAPTURE_AT_KEY]: Date.now(),
+  });
+}
+
+async function isDuplicateCaptureUrl(url, windowMs) {
+  const ms = windowMs ?? JBHM_CONFIG.DUPLICATE_CAPTURE_MS ?? 30_000;
+  const normalized = String(url || "").trim();
+  if (!normalized) return false;
+  const { url: lastUrl, at } = await getLastCapture();
+  if (!lastUrl || lastUrl !== normalized) return false;
+  return Date.now() - at < ms;
 }
 
 async function getUsername() {
@@ -98,13 +224,19 @@ async function clearUsernameValidation() {
 }
 
 async function loadPromptTemplate() {
+  const local = await chrome.storage.local.get({ [PROMPT_TEMPLATE_LOCAL_KEY]: "" });
+  if (local[PROMPT_TEMPLATE_LOCAL_KEY]) {
+    return String(local[PROMPT_TEMPLATE_LOCAL_KEY]).trim() || DEFAULT_PROMPT_TEMPLATE;
+  }
   const { promptTemplate } = await chrome.storage.sync.get("promptTemplate");
   const value = String(promptTemplate || DEFAULT_PROMPT_TEMPLATE).trim();
   return value || DEFAULT_PROMPT_TEMPLATE;
 }
 
 async function savePromptTemplate(text) {
-  await chrome.storage.sync.set({ promptTemplate: String(text || DEFAULT_PROMPT_TEMPLATE) });
+  const value = String(text || DEFAULT_PROMPT_TEMPLATE);
+  await chrome.storage.local.set({ [PROMPT_TEMPLATE_LOCAL_KEY]: value });
+  await chrome.storage.sync.set({ promptTemplate: value });
 }
 
 /**

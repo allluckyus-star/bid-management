@@ -6,8 +6,8 @@ const saveCaptureBtn = document.getElementById("saveCaptureBtn");
 const promptSendFooterBtn = document.getElementById("promptSendBtn");
 const resumeDownloadBtn = document.getElementById("resumeDownloadBtn");
 
-const TABS = ["JD", "Resume", "Settings", "Prompt"];
-let activeTab = "JD";
+const TABS = ["Capture", "JD", "Resume", "Settings", "Prompt"];
+let activeTab = "Capture";
 
 let state = {
   status: null,
@@ -46,6 +46,10 @@ let state = {
     savePrompt: false,
     sendPrompt: false,
   },
+  captureDraft: null,
+  localPromptText: "",
+  localPromptWarning: "",
+  resumeLabelCache: "",
 };
 
 function send(type, payload = {}) {
@@ -97,6 +101,7 @@ function tabLoadingHtml(label = "Loading…") {
 }
 
 function tabLoadingLabel(tab) {
+  if (tab === "Capture") return "Loading page text…";
   if (tab === "JD") return "Loading JD source…";
   if (tab === "Resume") return "Loading resumes…";
   if (tab === "Settings") return "Loading settings…";
@@ -259,9 +264,10 @@ function refreshJdSelectionUi() {
   });
 }
 
-async function refreshContext() {
+async function refreshContext(options = {}) {
+  const forceRefresh = options.forceRefresh === true;
   const [status, page, syncData] = await Promise.all([
-    send("GET_EXTENSION_STATUS"),
+    send("GET_EXTENSION_STATUS", { forceRefresh }),
     send("GET_PAGE_CONTEXT"),
     chrome.storage.sync.get("promptTemplate"),
   ]);
@@ -356,9 +362,11 @@ async function switchTab() {
   }
 
   try {
-    if (tab === "JD") await loadJdView();
+    if (tab === "Capture") {
+      if (!state.captureDraft) state.captureDraft = emptyCaptureDraft();
+    } else if (tab === "JD") await loadJdView();
     else if (tab === "Resume") await loadResumeLibrary();
-    else if (tab === "Settings") await refreshContext();
+    else if (tab === "Settings") await refreshContext({ forceRefresh: false });
     if (activeTab === tab) await renderContent();
   } catch (err) {
     if (activeTab === tab) {
@@ -465,8 +473,22 @@ function resumeTabHtml() {
 function settingsTabHtml() {
   const s = state.status || {};
   const hint = captureReadinessHint();
+  const apiBase = s.apiBaseUrl || JBHM_CONFIG.PRODUCTION_URL;
+  const validatedAt = s.username_validated_at
+    ? new Date(s.username_validated_at).toLocaleString()
+    : "Never";
   return `
     ${hint ? `<div class="banner ${hint.type}">${escapeHtml(hint.text)}</div>` : ""}
+
+    <section class="settings-section">
+      <h3>Connection</h3>
+      <p class="muted">API: <code>${escapeHtml(apiBase)}</code></p>
+      <p class="muted">Environment: ${escapeHtml(s.apiEnv === "local" ? "localhost" : "production")}</p>
+      <p class="muted">Token: ${s.configured ? (s.connected ? "valid" : "invalid") : "not set"}</p>
+      <p class="muted">Username: ${s.username_validated ? escapeHtml(s.username || "") : "not validated"}</p>
+      <p class="muted">Last validated: ${escapeHtml(validatedAt)}</p>
+      ${JBHM_CONFIG.FREE_TIER_SAFE_MODE ? '<p class="muted">Free-tier safe mode is ON.</p>' : ""}
+    </section>
 
     <section class="settings-section">
       <h3>Capture token</h3>
@@ -488,6 +510,7 @@ function settingsTabHtml() {
         <button type="button" class="btn primary" id="testConnectionBtn" ${state.settingsBusy.testConnection ? "disabled" : ""}>
           ${state.settingsBusy.testConnection ? "Testing…" : "Test connection"}
         </button>
+        <button type="button" class="btn" id="refreshStatusBtn">Refresh status</button>
       </div>
       ${fieldFeedbackHtml("token")}
       ${fieldFeedbackHtml("connection")}
@@ -543,30 +566,47 @@ function settingsTabHtml() {
 }
 
 function promptTabHtml() {
+  const jdText = state.captureDraft?.jdText || state.jdManualText || "";
+  const chars = state.localPromptText ? promptCharCount(state.localPromptText) : 0;
+  const warn = state.localPromptWarning || "";
   return `
     <section class="settings-section">
+      <h3>Local prompt (free-tier)</h3>
+      <p class="hint">Generate on device — no API call. Uses Capture JD + template below.</p>
+      <div class="row">
+        <button type="button" class="btn primary" id="promptGenerateLocalBtn">Generate prompt</button>
+        <button type="button" class="btn" id="promptCopyLocalBtn" ${state.localPromptText ? "" : "disabled"}>Copy prompt</button>
+        <button type="button" class="btn" id="promptSendLocalBtn" ${state.localPromptText ? "" : "disabled"}>Send local to ChatGPT</button>
+      </div>
+      ${warn ? `<p class="field-feedback warn">${escapeHtml(warn)}</p>` : ""}
+      ${chars ? `<p class="muted">${chars.toLocaleString()} characters</p>` : ""}
+      <textarea id="localPromptPreview" class="textarea mono" readonly style="min-height:140px" placeholder="Generate to preview…">${escapeHtml(state.localPromptText)}</textarea>
+      <p class="muted">Server prompt (resume + team JD) uses API — footer ChatGPT button or below.</p>
+    </section>
+    <section class="settings-section">
       <h3>Editable prompt template</h3>
-      <p class="hint">Prepended to the server-controlled suffix when sending to ChatGPT.</p>
-      <textarea id="promptEditor" class="textarea mono" style="min-height:200px">${escapeHtml(state.promptTemplate)}</textarea>
+      <p class="hint">Stored locally in this browser.</p>
+      <textarea id="promptEditor" class="textarea mono" style="min-height:160px">${escapeHtml(state.promptTemplate)}</textarea>
       <div class="row">
         <button type="button" class="btn" id="promptResetBtn" ${state.settingsBusy.savePrompt || state.settingsBusy.sendPrompt ? "disabled" : ""}>Reset default</button>
         <button type="button" class="btn" id="promptSaveBtn" ${state.settingsBusy.savePrompt ? "disabled" : ""}>
-          ${state.settingsBusy.savePrompt ? "Saving…" : "Save prompt"}
+          ${state.settingsBusy.savePrompt ? "Saving…" : "Save template"}
         </button>
-        <button type="button" class="btn primary" id="promptSendTabBtn" ${state.settingsBusy.sendPrompt ? "disabled" : ""}>
-          ${state.settingsBusy.sendPrompt ? "Sending…" : "Send to ChatGPT"}
+        <button type="button" class="btn" id="promptSendTabBtn" ${state.settingsBusy.sendPrompt ? "disabled" : ""}>
+          ${state.settingsBusy.sendPrompt ? "Server prompt…" : "Server prompt → ChatGPT"}
         </button>
       </div>
     </section>
     <section class="settings-section">
-      <h3>Locked suffix (server controlled)</h3>
-      <textarea class="textarea mono" readonly style="min-height:120px">${escapeHtml(LOCKED_PROMPT_SUFFIX_PREVIEW)}</textarea>
+      <h3>JD for prompt</h3>
+      <p class="muted">${jdText.length ? `${jdText.length.toLocaleString()} chars from Capture tab` : "Capture or paste JD on Capture tab first."}</p>
     </section>
   `;
 }
 
 async function renderContent() {
-  if (activeTab === "JD") contentEl.innerHTML = jdTabHtml();
+  if (activeTab === "Capture") contentEl.innerHTML = captureTabHtml();
+  else if (activeTab === "JD") contentEl.innerHTML = jdTabHtml();
   else if (activeTab === "Resume") contentEl.innerHTML = resumeTabHtml();
   else if (activeTab === "Settings") contentEl.innerHTML = settingsTabHtml();
   else contentEl.innerHTML = promptTabHtml();
@@ -672,6 +712,11 @@ function showJdPreview(text) {
 }
 
 function wireTabActions() {
+  if (activeTab === "Capture") {
+    wireCaptureTabActions();
+    return;
+  }
+
   contentEl.querySelectorAll("[data-mode]").forEach((el) => {
     el.addEventListener("click", (e) => {
       if (e.target.closest("[data-skip-mode-select], button, input, textarea, label, table, a")) return;
@@ -838,7 +883,7 @@ function wireTabActions() {
     setSettingsFieldFeedback("connection", "Testing connection…", "warn");
     await renderContent();
     const res = await send("TEST_CONNECTION");
-    await refreshContext();
+    await refreshContext({ forceRefresh: true });
     state.settingsBusy.testConnection = false;
     if (res?.ok) {
       const who = res.me?.display_name || res.me?.email || "your account";
@@ -847,6 +892,16 @@ function wireTabActions() {
     } else {
       setSettingsFieldFeedback("connection", res?.error || res?.detail || "Connection failed.", "err");
     }
+    await renderContent();
+  });
+
+  document.getElementById("refreshStatusBtn")?.addEventListener("click", async () => {
+    clearSettingsFieldFeedback("connection");
+    setSettingsFieldFeedback("connection", "Refreshing status…", "warn");
+    await renderContent();
+    await refreshContext({ forceRefresh: true });
+    updateStatusBadge();
+    setSettingsFieldFeedback("connection", "Status refreshed.", "ok");
     await renderContent();
   });
 
@@ -866,7 +921,7 @@ function wireTabActions() {
     if (res?.ok) {
       state.settingsUsernameInput = username;
     }
-    await refreshContext();
+    await refreshContext({ forceRefresh: true });
     state.settingsUsernameInput = username;
     state.settingsBusy.validateUsername = false;
     setSettingsFieldFeedback(
@@ -941,6 +996,46 @@ function wireTabActions() {
     }
   });
   document.getElementById("promptSendTabBtn")?.addEventListener("click", () => void bindPromptSend());
+
+  document.getElementById("promptGenerateLocalBtn")?.addEventListener("click", async () => {
+    const editor = document.getElementById("promptEditor");
+    if (editor) state.promptTemplate = String(editor.value || DEFAULT_PROMPT_TEMPLATE);
+    const jdText = state.captureDraft?.jdText || "";
+    const text = buildLocalChatGptPrompt({
+      template: state.promptTemplate,
+      jdText,
+      jobTitle: state.captureDraft?.title,
+      company: state.captureDraft?.company,
+      resumeLabel: state.resumeLabelCache || "your default resume",
+      username: state.status?.username,
+    });
+    state.localPromptText = text;
+    state.localPromptWarning = promptSizeWarning(promptCharCount(text));
+    setInlineBanner("Prompt generated locally (no API).", "ok");
+    await renderContent();
+  });
+
+  document.getElementById("promptCopyLocalBtn")?.addEventListener("click", async () => {
+    if (!state.localPromptText) return;
+    try {
+      await navigator.clipboard.writeText(state.localPromptText);
+      setInlineBanner("Prompt copied.", "ok");
+    } catch {
+      setInlineBanner("Could not copy to clipboard.", "err");
+    }
+  });
+
+  document.getElementById("promptSendLocalBtn")?.addEventListener("click", async () => {
+    if (!state.localPromptText) {
+      setInlineBanner("Generate a local prompt first.", "warn");
+      return;
+    }
+    const res = await send("PASTE_LOCAL_PROMPT", { text: state.localPromptText });
+    setInlineBanner(
+      res?.status === "ok" ? "Local prompt sent to ChatGPT." : res?.detail || "Could not open ChatGPT.",
+      res?.status === "ok" ? "ok" : "err",
+    );
+  });
 }
 
 async function openDashboard(path = "/dashboard") {
@@ -968,20 +1063,15 @@ window.addEventListener("message", (event) => {
 });
 
 saveCaptureBtn.addEventListener("click", async () => {
-  const prevText = saveCaptureBtn.textContent;
-  saveCaptureBtn.disabled = true;
-  saveCaptureBtn.textContent = "Capturing…";
-  const res = await send("CAPTURE_FROM_PANEL");
-  setInlineBanner(
-    res?.ok ? "Capture saved." : res?.error || res?.detail || "Capture failed.",
-    res?.ok ? "ok" : "err",
-  );
-  if (res?.ok && activeTab === "JD") {
-    await loadJdView();
-    await renderContent();
+  if (activeTab !== "Capture") {
+    activeTab = "Capture";
+    await switchTab();
+    if (!state.captureDraft?.jdText) {
+      await refreshCaptureFromPage();
+    }
+    return;
   }
-  saveCaptureBtn.disabled = false;
-  saveCaptureBtn.textContent = prevText || "Capture job";
+  await saveReviewedCaptureToDashboard(false);
 });
 
 promptSendFooterBtn.addEventListener("click", async () => {
@@ -1012,13 +1102,12 @@ resumeDownloadBtn.addEventListener("click", async () => {
 
 async function boot() {
   showTabLoading("Connecting…");
-  await refreshContext();
+  state.captureDraft = emptyCaptureDraft();
+  await refreshContext({ forceRefresh: false });
+  const pageCtx = await send("GET_PAGE_CONTEXT");
+  if (pageCtx && !pageCtx.status) state.page = pageCtx;
   await syncWorkspaceLayoutFromHost();
   renderTabs();
-  if (state.status?.connected) {
-    showTabLoading(tabLoadingLabel(activeTab));
-    await Promise.all([loadJdView(), loadResumeLibrary()]);
-  }
   await renderContent();
 }
 

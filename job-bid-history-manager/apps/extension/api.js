@@ -11,16 +11,28 @@ function parseApiErrorBody(text, status) {
   }
 }
 
+function debugNetwork(route, startedAt, extra = {}) {
+  if (typeof console === "undefined" || !console.debug) return;
+  console.debug("[jbhm-network]", {
+    route,
+    durationMs: Date.now() - startedAt,
+    ...extra,
+  });
+}
+
 /**
  * @param {string} baseUrl
  * @param {string} token
  */
 async function fetchExtensionMe(baseUrl, token) {
+  const route = "extension/me";
+  const startedAt = Date.now();
   const res = await fetch(`${baseUrl}/api/extension/me`, {
     method: "GET",
     headers: { Authorization: `Bearer ${token}` },
   });
   const text = await res.text();
+  debugNetwork(route, startedAt, { success: res.ok, status: res.status });
   if (!res.ok) {
     throw new Error(parseApiErrorBody(text, res.status));
   }
@@ -33,6 +45,8 @@ async function fetchExtensionMe(baseUrl, token) {
  * @param {string} username
  */
 async function validateExtensionUsername(baseUrl, token, username) {
+  const route = "extension/validate-username";
+  const startedAt = Date.now();
   const res = await fetch(`${baseUrl}/api/extension/validate-username`, {
     method: "POST",
     headers: {
@@ -42,6 +56,7 @@ async function validateExtensionUsername(baseUrl, token, username) {
     body: JSON.stringify({ username }),
   });
   const text = await res.text();
+  debugNetwork(route, startedAt, { success: res.ok, status: res.status });
   if (!res.ok) {
     throw new Error(parseApiErrorBody(text, res.status));
   }
@@ -53,15 +68,20 @@ async function validateExtensionUsername(baseUrl, token, username) {
  * @param {string} token
  * @param {object} pageData
  */
-async function postCaptureJob(baseUrl, token, pageData, username) {
+async function postCaptureJob(baseUrl, token, pageData, username, reviewed = null) {
+  const route = "capture/job";
+  const startedAt = Date.now();
+  const textLength = (pageData.captured_text || reviewed?.captured_text || "").length;
   const payload = {
-    source_url: pageData.source_url,
-    page_title: pageData.page_title,
-    captured_text: pageData.captured_text || "",
+    source_url: pageData?.source_url ?? reviewed?.source_url,
+    page_title: pageData?.page_title ?? reviewed?.page_title,
+    captured_text: pageData?.captured_text || reviewed?.captured_text || "",
     captured_at: new Date().toISOString(),
     extension_version: JBHM_CONFIG.EXTENSION_VERSION,
-    capture_method: pageData.capture_method || "document.body.innerText",
+    capture_method: pageData?.capture_method || reviewed?.capture_method || "document.body.innerText",
+    extraction_source: reviewed?.extraction_source,
     username: String(username || ""),
+    ...(reviewed || {}),
   };
 
   const res = await fetch(`${baseUrl}/api/capture/job`, {
@@ -74,6 +94,11 @@ async function postCaptureJob(baseUrl, token, pageData, username) {
   });
 
   const text = await res.text();
+  debugNetwork(route, startedAt, {
+    success: res.ok,
+    status: res.status,
+    textLength,
+  });
   if (!res.ok) {
     throw new Error(parseApiErrorBody(text, res.status));
   }
@@ -88,6 +113,8 @@ async function postCaptureJob(baseUrl, token, pageData, username) {
  * @param {{ job_id?: string, prompt_prefix?: string }} opts
  */
 async function postChatGptPrompt(baseUrl, token, teamId, opts = {}) {
+  const route = "extension/chatgpt-prompt";
+  const startedAt = Date.now();
   const res = await fetch(`${baseUrl}/api/team/${teamId}/extension/chatgpt-prompt`, {
     method: "POST",
     headers: {
@@ -100,6 +127,7 @@ async function postChatGptPrompt(baseUrl, token, teamId, opts = {}) {
     }),
   });
   const text = await res.text();
+  debugNetwork(route, startedAt, { success: res.ok, status: res.status });
   if (!res.ok) {
     throw new Error(parseApiErrorBody(text, res.status));
   }
@@ -115,6 +143,8 @@ async function postChatGptPrompt(baseUrl, token, teamId, opts = {}) {
  * @param {{ jd_label?: string }} opts
  */
 async function postRenderDocx(baseUrl, token, teamId, gptText, opts = {}) {
+  const route = "extension/render-docx";
+  const startedAt = Date.now();
   const res = await fetch(`${baseUrl}/api/team/${teamId}/extension/render-docx`, {
     method: "POST",
     headers: {
@@ -127,6 +157,7 @@ async function postRenderDocx(baseUrl, token, teamId, gptText, opts = {}) {
     }),
   });
 
+  debugNetwork(route, startedAt, { success: res.ok, status: res.status });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(parseApiErrorBody(text, res.status));
@@ -165,38 +196,49 @@ function teamApiUrl(baseUrl, teamId, path) {
 }
 
 async function fetchTeamJdSettings(baseUrl, token, teamId) {
+  const route = "team/jd-settings";
+  const startedAt = Date.now();
   const res = await fetch(teamApiUrl(baseUrl, teamId, "/jd-settings"), {
     method: "GET",
     headers: teamApiHeaders(token, false),
   });
   const text = await res.text();
+  debugNetwork(route, startedAt, { success: res.ok, status: res.status });
   if (!res.ok) throw new Error(parseApiErrorBody(text, res.status));
   return text ? JSON.parse(text) : {};
 }
 
 async function postApplyJdFromSelection(baseUrl, token, teamId, { field, value, page_url, captured_by }) {
+  const route = "team/jd-settings/apply-selection";
+  const startedAt = Date.now();
   const res = await fetch(teamApiUrl(baseUrl, teamId, "/jd-settings/apply-selection"), {
     method: "POST",
     headers: teamApiHeaders(token),
     body: JSON.stringify({ field, value, page_url, captured_by }),
   });
   const text = await res.text();
+  debugNetwork(route, startedAt, { success: res.ok, status: res.status });
   if (!res.ok) throw new Error(parseApiErrorBody(text, res.status));
   return text ? JSON.parse(text) : {};
 }
 
 async function patchTeamJdSettings(baseUrl, token, teamId, payload) {
+  const route = "team/jd-settings-patch";
+  const startedAt = Date.now();
   const res = await fetch(teamApiUrl(baseUrl, teamId, "/jd-settings"), {
     method: "PATCH",
     headers: teamApiHeaders(token),
     body: JSON.stringify(payload),
   });
   const text = await res.text();
+  debugNetwork(route, startedAt, { success: res.ok, status: res.status });
   if (!res.ok) throw new Error(parseApiErrorBody(text, res.status));
   return text ? JSON.parse(text) : {};
 }
 
 async function postManualJdSource(baseUrl, token, teamId, { text, file, title, source_origin, local_file_path }) {
+  const route = "team/jd-settings-post";
+  const startedAt = Date.now();
   const form = new FormData();
   if (title) form.append("title", title);
   if (text) form.append("text", text);
@@ -209,22 +251,28 @@ async function postManualJdSource(baseUrl, token, teamId, { text, file, title, s
     body: form,
   });
   const bodyText = await res.text();
+  debugNetwork(route, startedAt, { success: res.ok, status: res.status });
   if (!res.ok) throw new Error(parseApiErrorBody(bodyText, res.status));
   const json = bodyText ? JSON.parse(bodyText) : {};
   return json.item;
 }
 
 async function fetchResumeLibrary(baseUrl, token, teamId) {
+  const route = "team/resume-library";
+  const startedAt = Date.now();
   const res = await fetch(teamApiUrl(baseUrl, teamId, "/resume-library"), {
     method: "GET",
     headers: teamApiHeaders(token, false),
   });
   const text = await res.text();
+  debugNetwork(route, startedAt, { success: res.ok, status: res.status });
   if (!res.ok) throw new Error(parseApiErrorBody(text, res.status));
   return text ? JSON.parse(text) : { items: [] };
 }
 
 async function uploadResumeLibrary(baseUrl, token, teamId, file, setDefault) {
+  const route = "team/resume-library-upload";
+  const startedAt = Date.now();
   const form = new FormData();
   form.append("file", file);
   if (setDefault) form.append("set_default", "1");
@@ -234,25 +282,32 @@ async function uploadResumeLibrary(baseUrl, token, teamId, file, setDefault) {
     body: form,
   });
   const text = await res.text();
+  debugNetwork(route, startedAt, { success: res.ok, status: res.status });
   if (!res.ok) throw new Error(parseApiErrorBody(text, res.status));
   return text ? JSON.parse(text) : {};
 }
 
 async function patchResumeLibraryItem(baseUrl, token, teamId, resumeId) {
+  const route = "team/resume-library-patch";
+  const startedAt = Date.now();
   const res = await fetch(teamApiUrl(baseUrl, teamId, `/resume-library/${resumeId}`), {
     method: "PATCH",
     headers: teamApiHeaders(token),
     body: JSON.stringify({ is_default: true }),
   });
   const text = await res.text();
+  debugNetwork(route, startedAt, { success: res.ok, status: res.status });
   if (!res.ok) throw new Error(parseApiErrorBody(text, res.status));
 }
 
 async function deleteResumeLibraryItem(baseUrl, token, teamId, resumeId) {
+  const route = "team/resume-library-delete";
+  const startedAt = Date.now();
   const res = await fetch(teamApiUrl(baseUrl, teamId, `/resume-library/${resumeId}`), {
     method: "DELETE",
     headers: teamApiHeaders(token, false),
   });
+  debugNetwork(route, startedAt, { success: res.ok, status: res.status });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(parseApiErrorBody(text, res.status));
@@ -260,6 +315,8 @@ async function deleteResumeLibraryItem(baseUrl, token, teamId, resumeId) {
 }
 
 async function postGptResult(baseUrl, token, teamId, optimizationId, gptText) {
+  const route = "team/gpt-result";
+  const startedAt = Date.now();
   const res = await fetch(
     `${baseUrl}/api/team/${teamId}/resume-optimizations/${optimizationId}/gpt-result`,
     {
@@ -272,6 +329,7 @@ async function postGptResult(baseUrl, token, teamId, optimizationId, gptText) {
     },
   );
   const text = await res.text();
+  debugNetwork(route, startedAt, { success: res.ok, status: res.status });
   if (!res.ok) {
     throw new Error(parseApiErrorBody(text, res.status));
   }

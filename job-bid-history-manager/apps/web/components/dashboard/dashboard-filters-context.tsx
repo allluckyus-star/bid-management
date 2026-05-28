@@ -68,7 +68,7 @@ export function DashboardFiltersProvider({ children }: { children: ReactNode }) 
     savePersistedFilters(teamId, filters);
   }, [teamId, filters, hydrated]);
 
-  const debouncedSearch = useDebouncedValue(filters.column_search ?? {}, 350);
+  const debouncedSearch = useDebouncedValue(filters.column_search ?? {}, 300);
 
   const listContext = useMemo<JobFilters>(
     () => ({

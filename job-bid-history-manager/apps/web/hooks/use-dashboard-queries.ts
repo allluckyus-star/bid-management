@@ -13,6 +13,7 @@ import {
 import { useTeamId } from "@/context/team-context";
 import { dashboardKeys } from "@/lib/dashboard/query-keys";
 import { DASHBOARD_FALLBACK_REFETCH_MS } from "@/lib/dashboard/realtime-invalidation";
+import { FREE_TIER_SAFE_MODE } from "@/lib/config/free-tier";
 import { useVisibleInterval } from "@/hooks/use-visible-interval";
 
 const STALE = {
@@ -29,7 +30,7 @@ export function useJobsQuery(
 ) {
   const teamId = useTeamId();
   const interval = useVisibleInterval(
-    opts.pollMs ?? DASHBOARD_FALLBACK_REFETCH_MS,
+    FREE_TIER_SAFE_MODE ? false : opts.pollMs ?? DASHBOARD_FALLBACK_REFETCH_MS,
     opts.paused,
   );
   return useQuery({
@@ -37,17 +38,22 @@ export function useJobsQuery(
     queryFn: () => fetchJobs(teamId, apiFilters),
     staleTime: STALE.jobs,
     refetchInterval: interval,
+    refetchOnWindowFocus: !FREE_TIER_SAFE_MODE,
   });
 }
 
 export function useDashboardSummaryQuery(opts: { paused: boolean }) {
   const teamId = useTeamId();
-  const interval = useVisibleInterval(DASHBOARD_FALLBACK_REFETCH_MS, opts.paused);
+  const interval = useVisibleInterval(
+    FREE_TIER_SAFE_MODE ? false : DASHBOARD_FALLBACK_REFETCH_MS,
+    opts.paused,
+  );
   return useQuery({
     queryKey: dashboardKeys.summary(teamId),
     queryFn: () => fetchDashboard(teamId),
     staleTime: STALE.summary,
     refetchInterval: interval,
+    refetchOnWindowFocus: !FREE_TIER_SAFE_MODE,
   });
 }
 

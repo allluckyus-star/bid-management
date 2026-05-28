@@ -85,6 +85,7 @@ const NON_INJECTABLE_URL_PREFIXES = [
   "edge://",
   "about:",
   "chrome-extension://",
+  "moz-extension://",
 ];
 
 function tabUrlInjectable(url) {
@@ -131,10 +132,6 @@ async function toggleWorkspaceOnTab(tab) {
     return { ok: false, error: msg };
   }
 }
-
-chrome.action.onClicked.addListener((tab) => {
-  void toggleWorkspaceOnTab(tab);
-});
 
 function tabIsChatGpt(tab) {
   try {
@@ -227,6 +224,7 @@ async function applyJdFromSelection(field, value, pageUrl) {
 
 async function captureActiveTab(tabId, options = {}) {
   const setJdToLatest = options.setJdToLatest === true;
+  const forceCapture = options.forceCapture === true;
   if (capturingTabIds.has(tabId)) {
     return { ok: false, error: "Capture already in progress." };
   }
@@ -242,13 +240,25 @@ async function captureActiveTab(tabId, options = {}) {
   }
 
   capturingTabIds.add(tabId);
-  notify("Job Bid History", "Capturing page…");
+  const captureStartedAt = Date.now();
 
   try {
     const pageData = await chrome.tabs.sendMessage(tabId, { type: "GET_VISIBLE_TEXT" });
     if (!hasContent(pageData)) {
       throw new Error("No job content found on this page.");
     }
+
+    const sourceUrl = String(pageData.source_url || "").trim();
+    if (!forceCapture && (await isDuplicateCaptureUrl(sourceUrl))) {
+      const msg = "This page was captured recently. Wait 30 seconds or capture again to confirm.";
+      notify("Job Bid History", msg);
+      return { ok: false, error: msg, duplicate: true };
+    }
+
+    if (pageData.warning === "short_content") {
+      notify("Job Bid History", "Captured text looks short — saving anyway.");
+    }
+
     const result = await postCaptureJob(
       settings.apiBaseUrl,
       settings.captureToken,
@@ -256,7 +266,18 @@ async function captureActiveTab(tabId, options = {}) {
       settings.username,
     );
 
-    const status = await getExtensionStatus();
+    if (sourceUrl) {
+      await setLastCapture(sourceUrl);
+    }
+
+    console.debug("[jbhm-capture]", {
+      action: "capture/job",
+      durationMs: Date.now() - captureStartedAt,
+      textLength: (pageData.captured_text || "").length,
+      success: true,
+    });
+
+    const status = await getExtensionStatus({ forceRefresh: true });
     await appendCaptureHistory({
       title: pageData?.page_title || "",
       company: result?.company_name || "",
@@ -293,6 +314,12 @@ async function captureActiveTab(tabId, options = {}) {
     return { ok: true, result };
   } catch (err) {
     const msg = err?.message || String(err);
+    console.debug("[jbhm-capture]", {
+      action: "capture/job",
+      durationMs: Date.now() - captureStartedAt,
+      success: false,
+      failure: msg.slice(0, 120),
+    });
     notify("Capture failed", msg);
     return { ok: false, error: msg };
   } finally {
@@ -307,7 +334,33 @@ async function appendCaptureHistory(row) {
   await chrome.storage.local.set({ [HISTORY_KEY]: next });
 }
 
-async function getExtensionStatus() {
+async function buildExtensionStatusFromNetwork(settings) {
+  const me = await fetchExtensionMe(settings.apiBaseUrl, settings.captureToken);
+  const username = settings.username || "";
+  const validationCache = await getUsernameValidationCache(settings);
+  const usernameValid =
+    (Boolean(settings.usernameValidatedAt) || Boolean(validationCache?.validated)) &&
+    isValidUsernameFormat(username) &&
+    username === String(me.username || "").trim().toLowerCase();
+  return {
+    configured: true,
+    connected: true,
+    apiBaseUrl: settings.apiBaseUrl,
+    apiEnv: settings.apiEnv,
+    team_id: me.team_id,
+    display_name: me.display_name,
+    email: me.email,
+    username,
+    username_registered: me.username || null,
+    username_validated: usernameValid,
+    username_validated_at: settings.usernameValidatedAt || null,
+    captured_by: me.captured_by,
+    dashboard_url: me.dashboard_url || "/dashboard",
+  };
+}
+
+async function getExtensionStatus(options = {}) {
+  const forceRefresh = options.forceRefresh === true;
   const settings = await loadExtensionSettings();
   if (!settings.captureToken) {
     return {
@@ -316,35 +369,28 @@ async function getExtensionStatus() {
       apiEnv: settings.apiEnv,
     };
   }
+
+  if (!forceRefresh) {
+    const { status, cachedAt } = await getCachedExtensionStatus();
+    if (status && isExtensionStatusCacheFresh(cachedAt)) {
+      return status;
+    }
+  }
+
   try {
-    const me = await fetchExtensionMe(settings.apiBaseUrl, settings.captureToken);
-    const username = settings.username || "";
-    const usernameValid =
-      Boolean(settings.usernameValidatedAt) &&
-      isValidUsernameFormat(username) &&
-      username === String(me.username || "").trim().toLowerCase();
-    return {
-      configured: true,
-      connected: true,
-      apiBaseUrl: settings.apiBaseUrl,
-      apiEnv: settings.apiEnv,
-      team_id: me.team_id,
-      display_name: me.display_name,
-      email: me.email,
-      username: username,
-      username_registered: me.username || null,
-      username_validated: usernameValid,
-      username_validated_at: settings.usernameValidatedAt || null,
-      captured_by: me.captured_by,
-    };
+    const status = await buildExtensionStatusFromNetwork(settings);
+    await setCachedExtensionStatus(status);
+    return status;
   } catch (err) {
-    return {
+    const disconnected = {
       configured: true,
       connected: false,
       apiBaseUrl: settings.apiBaseUrl,
       apiEnv: settings.apiEnv,
       error: err?.message || String(err),
     };
+    await setCachedExtensionStatus(disconnected);
+    return disconnected;
   }
 }
 
@@ -597,6 +643,17 @@ async function downloadLastExport() {
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== "jbhm-capture" || !tab?.id) return;
+  if (JBHM_CONFIG.FREE_TIER_SAFE_MODE) {
+    notify("Job Bid History", "Open workspace Capture tab to review before saving.");
+    if (tabUrlInjectable(tab.url)) {
+      try {
+        await sendWorkspaceMessage(tab.id, { type: "OPEN_WORKSPACE" });
+      } catch {
+        /* ignore */
+      }
+    }
+    return;
+  }
   await captureActiveTab(tab.id, { setJdToLatest: true });
 });
 
@@ -652,7 +709,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (type === "GET_EXTENSION_STATUS") {
-    getExtensionStatus().then(sendResponse);
+    getExtensionStatus({ forceRefresh: message.forceRefresh === true }).then(sendResponse);
     return true;
   }
 
@@ -668,6 +725,93 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (type === "CAPTURE_REVIEWED_SAVE") {
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+      const tab = tabs[0];
+      if (!tab?.id) {
+        sendResponse({ ok: false, error: "No active tab." });
+        return;
+      }
+      const settings = await loadExtensionSettings();
+      if (!settings.captureToken) {
+        sendResponse({ ok: false, error: "Add capture token in Settings." });
+        return;
+      }
+      if (
+        !settings.username ||
+        !settings.usernameValidatedAt ||
+        !isValidUsernameFormat(settings.username)
+      ) {
+        sendResponse({ ok: false, error: "Validate username in Settings first." });
+        return;
+      }
+      const reviewed = message.reviewed || {};
+      const sourceUrl = String(reviewed.source_url || "").trim();
+      if (!message.forceCapture && (await isDuplicateCaptureUrl(sourceUrl))) {
+        sendResponse({
+          ok: false,
+          error: "This page was captured recently. Wait 30 seconds or save again to confirm.",
+          duplicate: true,
+        });
+        return;
+      }
+      if (capturingTabIds.has(tab.id)) {
+        sendResponse({ ok: false, error: "Capture already in progress." });
+        return;
+      }
+      capturingTabIds.add(tab.id);
+      const startedAt = Date.now();
+      try {
+        const pageData = {
+          captured_text: reviewed.captured_text,
+          source_url: reviewed.source_url,
+          page_title: reviewed.page_title,
+          capture_method: reviewed.capture_method,
+        };
+        const result = await postCaptureJob(
+          settings.apiBaseUrl,
+          settings.captureToken,
+          pageData,
+          settings.username,
+          reviewed,
+        );
+        if (sourceUrl) await setLastCapture(sourceUrl);
+        console.debug("[jbhm-capture]", {
+          action: "capture/job",
+          durationMs: Date.now() - startedAt,
+          textLength: (reviewed.captured_text || "").length,
+          extractionSource: reviewed.extraction_source || "client-reviewed",
+          success: true,
+        });
+        await getExtensionStatus({ forceRefresh: true });
+        sendResponse({ ok: true, result });
+      } catch (err) {
+        sendResponse({ ok: false, error: err?.message || String(err) });
+      } finally {
+        capturingTabIds.delete(tab.id);
+      }
+    });
+    return true;
+  }
+
+  if (type === "PASTE_LOCAL_PROMPT") {
+    (async () => {
+      try {
+        let tab = await getActiveTab();
+        if (!tabIsChatGpt(tab)) {
+          const chatId = await findChatGptTabId();
+          if (!chatId) throw new Error("Open ChatGPT in a tab first.");
+          tab = { id: chatId };
+        }
+        await pasteAndSubmitOnTab(tab.id, String(message.text || ""), false, false);
+        sendResponse({ status: "ok" });
+      } catch (err) {
+        sendResponse({ status: "error", detail: err?.message || String(err) });
+      }
+    })();
+    return true;
+  }
+
   if (type === "CAPTURE_FROM_POPUP") {
     chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
       const tab = tabs[0];
@@ -675,21 +819,37 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({ ok: false, error: "No active tab." });
         return;
       }
-      const out = await captureActiveTab(tab.id);
+      if (!tabUrlInjectable(tab.url)) {
+        sendResponse({
+          ok: false,
+          error: "Capture is not available on browser internal pages.",
+        });
+        return;
+      }
+      if (JBHM_CONFIG.FREE_TIER_SAFE_MODE) {
+        try {
+          await sendWorkspaceMessage(tab.id, { type: "OPEN_WORKSPACE" });
+          sendResponse({
+            ok: true,
+            message: "Workspace opened — review on Capture tab, then Save to Dashboard.",
+          });
+        } catch (err) {
+          sendResponse({ ok: false, error: err?.message || "Could not open workspace." });
+        }
+        return;
+      }
+      const out = await captureActiveTab(tab.id, {
+        forceCapture: message.forceCapture === true,
+      });
       sendResponse(out);
     });
     return true;
   }
 
   if (type === "CAPTURE_FROM_PANEL") {
-    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-      const tab = tabs[0];
-      if (!tab?.id) {
-        sendResponse({ ok: false, error: "No active tab." });
-        return;
-      }
-      const out = await captureActiveTab(tab.id);
-      sendResponse(out);
+    sendResponse({
+      ok: false,
+      error: "Use Capture tab → Save to Dashboard (review-first).",
     });
     return true;
   }
@@ -719,6 +879,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           return;
         }
         const me = await fetchExtensionMe(settings.apiBaseUrl, settings.captureToken);
+        await clearExtensionStatusCache();
+        const status = await buildExtensionStatusFromNetwork(settings);
+        await setCachedExtensionStatus(status);
         sendResponse({ ok: true, me });
       })
       .catch((err) => {
@@ -745,6 +908,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         }
         await validateExtensionUsername(settings.apiBaseUrl, settings.captureToken, username);
         await saveExtensionSettings({ username, usernameValidatedAt: new Date().toISOString() });
+        await setUsernameValidationCache({ ...settings, username });
+        await clearExtensionStatusCache();
         sendResponse({ ok: true, username });
       } catch (err) {
         sendResponse({ ok: false, error: err?.message || "Username validation failed." });

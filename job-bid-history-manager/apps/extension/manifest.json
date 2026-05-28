@@ -15,7 +15,8 @@
     "http://*/*"
   ],
   "action": {
-    "default_title": "Job Bid Assistant — click to open side panel on this page",
+    "default_title": "Job Bid Assistant — launcher",
+    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -43,7 +44,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "js": ["config.js", "content.js"],
       "run_at": "document_idle"
     },
     {
@@ -83,7 +84,18 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["panel.html", "panel.css", "panel.js", "config.js", "storage.js", "api.js", "prompt-defaults.js"],
+      "resources": [
+        "panel.html",
+        "panel.css",
+        "panel.js",
+        "panel-capture-tab.js",
+        "config.js",
+        "storage.js",
+        "api.js",
+        "prompt-defaults.js",
+        "local-extraction.js",
+        "local-prompt.js"
+      ],
       "matches": ["<all_urls>"]
     }
   ],

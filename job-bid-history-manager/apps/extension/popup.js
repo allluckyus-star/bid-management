@@ -11,6 +11,7 @@ const statusEl = document.getElementById("status");
 const hintEl = document.getElementById("hint");
 
 const PRODUCTION_DASHBOARD = `${JBHM_CONFIG.PRODUCTION_URL}/dashboard`;
+let captureInProgress = false;
 
 function setInlineStatus(message, type = "") {
   statusEl.textContent = message;
@@ -30,19 +31,15 @@ function send(type, payload = {}) {
 }
 
 function setButtonsEnabled(enabled, connected, usernameReady) {
-  captureBtn.disabled = !enabled || !connected || !usernameReady;
-  promptBtn.disabled = !enabled || !connected;
-  downloadBtn.disabled = !enabled || !connected;
-  openWorkspaceBtn.disabled = !enabled || !connected;
+  const busy = captureInProgress;
+  captureBtn.disabled = !enabled || !connected || !usernameReady || busy;
+  promptBtn.disabled = !enabled || !connected || busy;
+  downloadBtn.disabled = !enabled || !connected || busy;
+  openWorkspaceBtn.disabled = !enabled || !connected || busy;
 }
 
-async function updateUI() {
-  const [localData, status] = await Promise.all([
-    chrome.storage.local.get({ enabled: true }),
-    send("GET_EXTENSION_STATUS"),
-  ]);
-
-  const enabled = localData.enabled !== false;
+function renderStatus(status, fromCache = false) {
+  const enabled = true;
   const connected = Boolean(status?.connected);
   const usernameReady = Boolean(status?.username_validated);
 
@@ -55,7 +52,7 @@ async function updateUI() {
     setButtonsEnabled(false, false, false);
   } else if (connected) {
     statusCardEl.classList.add("ok");
-    const who = status.captured_by || status.display_name || status.email || "Connected";
+    const who = status.captured_by || status.display_name || "Connected";
     statusLabelEl.textContent = `Connected as ${who}`;
     const envLine = status.team_id
       ? `Team ${status.team_id.slice(0, 8)}… · ${status.apiEnv === "local" ? "localhost" : "production"}`
@@ -65,7 +62,8 @@ async function updateUI() {
     const usernameLine = usernameReady
       ? `Username: ${status.username}`
       : "Username missing/unvalidated. Open Settings.";
-    statusDetailEl.textContent = `${envLine} · ${usernameLine}`;
+    const cacheNote = fromCache ? " · cached status" : "";
+    statusDetailEl.textContent = `${envLine} · ${usernameLine}${cacheNote}`;
     setButtonsEnabled(enabled, true, usernameReady);
   } else {
     statusCardEl.classList.add("err");
@@ -74,13 +72,35 @@ async function updateUI() {
     setButtonsEnabled(false, false, false);
   }
 
-  hintEl.textContent = enabled
-    ? connected
-      ? usernameReady
-        ? "Open Workspace to review before saving."
-        : "Validate username in Settings."
-      : "Set capture token in Settings."
-    : "Extension is OFF.";
+  chrome.storage.local.get({ enabled: true }, (localData) => {
+    const extensionOn = localData.enabled !== false;
+    hintEl.textContent = extensionOn
+      ? connected
+        ? usernameReady
+          ? "Popup launcher — open Workspace for full tools."
+          : "Validate username in Settings."
+        : "Set capture token in Settings."
+      : "Extension is OFF.";
+  });
+}
+
+async function updateUI(options = {}) {
+  const forceRefresh = options.forceRefresh === true;
+  const status = await send("GET_EXTENSION_STATUS", { forceRefresh });
+  const { extensionStatusCacheAt: cachedAt = 0 } = await chrome.storage.local.get({
+    extensionStatusCacheAt: 0,
+  });
+  const fromCache =
+    !forceRefresh &&
+    cachedAt &&
+    Date.now() - Number(cachedAt) < (JBHM_CONFIG.STATUS_CACHE_TTL_MS || 300000);
+  renderStatus(status, fromCache);
+
+  if (!forceRefresh && status?.configured && !fromCache) {
+    void send("GET_EXTENSION_STATUS", { forceRefresh: true }).then((fresh) => {
+      if (fresh) renderStatus(fresh, false);
+    });
+  }
 }
 
 openWorkspaceBtn.addEventListener("click", async () => {
@@ -106,8 +126,24 @@ openDashboardBtn.addEventListener("click", () => {
 });
 
 captureBtn.addEventListener("click", async () => {
+  if (JBHM_CONFIG.FREE_TIER_SAFE_MODE) {
+    const res = await send("OPEN_WORKSPACE");
+    if (res?.ok === false) {
+      setInlineStatus(res?.error || "Open a normal web page first.", "err");
+      return;
+    }
+    setInlineStatus("Workspace opened — review on Capture tab, then Save.", "ok");
+    window.close();
+    return;
+  }
+
+  if (captureInProgress) return;
+  captureInProgress = true;
+  captureBtn.disabled = true;
   setInlineStatus("Capturing page…");
   const response = await send("CAPTURE_FROM_POPUP");
+  captureInProgress = false;
+  await updateUI();
   if (!response?.ok) {
     setInlineStatus(response?.error || response?.detail || "Capture failed.", "err");
     return;
@@ -138,13 +174,18 @@ downloadBtn.addEventListener("click", async () => {
   else setInlineStatus(res?.detail || "No export yet.", "err");
 });
 
-updateUI();
+void updateUI({ forceRefresh: false });
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (
-    (area === "local" && (changes.captureToken || changes.apiEnv || changes.enabled)) ||
+    (area === "local" &&
+      (changes.captureToken ||
+        changes.apiEnv ||
+        changes.enabled ||
+        changes.extensionStatusCache ||
+        changes.extensionStatusCacheAt)) ||
     (area === "sync" && changes.promptTemplate)
   ) {
-    updateUI();
+    void updateUI({ forceRefresh: false });
   }
 });

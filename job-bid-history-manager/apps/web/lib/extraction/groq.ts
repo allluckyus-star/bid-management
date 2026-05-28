@@ -1,6 +1,8 @@
 import type { JobExtraction } from "@jbhm/shared";
 import { normalizeExtraction } from "@/lib/extraction/normalize";
 
+const DEFAULT_GROQ_MAX_CAPTURE_CHARS = 10_000;
+
 const SYSTEM_PROMPT = `You extract structured data from job posting page text for a bid-tracking database.
 Input is visible page text (innerText), plus PAGE_TITLE and SOURCE_URL when provided.
 
@@ -51,6 +53,23 @@ cleaned_job_description (CRITICAL):
 
 Never use Apply/LinkedIn/Indeed as company_name.`;
 
+export function groqMaxCaptureChars(): number {
+  const raw = process.env.GROQ_MAX_CAPTURE_CHARS?.trim();
+  const n = raw ? Number.parseInt(raw, 10) : DEFAULT_GROQ_MAX_CAPTURE_CHARS;
+  if (!Number.isFinite(n) || n < 1000) return DEFAULT_GROQ_MAX_CAPTURE_CHARS;
+  return Math.min(n, 30_000);
+}
+
+/** Trim and normalize whitespace before sending to Groq. */
+export function cleanTextForGroq(text: string): string {
+  return String(text || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 export async function groqExtractJobData(
   capturedText: string,
   pageTitle: string,
@@ -60,9 +79,11 @@ export async function groqExtractJobData(
   if (!apiKey) throw new Error("GROQ_API_KEY not configured");
 
   const model = process.env.GROQ_MODEL?.trim() || "llama-3.1-8b-instant";
+  const maxChars = groqMaxCaptureChars();
+  const cleaned = cleanTextForGroq(capturedText).slice(0, maxChars);
   const userContent = [
     "Extract job fields from this captured job posting text:\n\n",
-    capturedText.slice(0, 18000),
+    cleaned,
     pageTitle ? `\n\nPAGE_TITLE: ${pageTitle}` : "",
     sourceUrl ? `\nSOURCE_URL: ${sourceUrl}` : "",
   ].join("");
