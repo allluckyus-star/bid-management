@@ -671,7 +671,7 @@ export function TimelineChart({
       const cats = dataRef.current?.series[0]?.buckets.length ?? 0;
       if (cats <= 1) return;
 
-      e.preventDefault();
+      if (e.cancelable) e.preventDefault();
       ev.stop?.();
 
       const maxSpan = maxZoomSpanPercent(cats, bucketRef.current);
@@ -1134,8 +1134,12 @@ export function TimelineChart({
             role="status"
             aria-live="polite"
             aria-label="Loading chart"
-            onWheel={(e) => e.preventDefault()}
-            onTouchMove={(e) => e.preventDefault()}
+            onWheel={(e) => {
+              if (e.cancelable) e.preventDefault();
+            }}
+            onTouchMove={(e) => {
+              if (e.cancelable) e.preventDefault();
+            }}
           >
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             <span className="text-sm text-muted-foreground">Loading chart…</span>
