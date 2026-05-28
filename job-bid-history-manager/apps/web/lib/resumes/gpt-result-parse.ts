@@ -28,6 +28,157 @@ function sanitizeJsonStrings(value: unknown): unknown {
   return value;
 }
 
+/** Decode common HTML entities from ChatGPT DOM copy. */
+export function decodeHtmlEntitiesInText(raw: string): string {
+  return String(raw ?? "")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .trim();
+}
+
+/** Escape raw newlines/tabs inside JSON string literals (matches extension content script). */
+export function escapeControlCharsInsideJsonStrings(s: string): string {
+  const input = String(s || "");
+  let out = "";
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < input.length; i += 1) {
+    const ch = input[i];
+    if (inString) {
+      if (escape) {
+        out += ch;
+        escape = false;
+        continue;
+      }
+      if (ch === "\\") {
+        out += ch;
+        escape = true;
+        continue;
+      }
+      if (ch === '"') {
+        out += ch;
+        inString = false;
+        continue;
+      }
+      if (ch === "\n") {
+        out += "\\n";
+        continue;
+      }
+      if (ch === "\r") {
+        out += "\\r";
+        continue;
+      }
+      if (ch === "\t") {
+        out += "\\t";
+        continue;
+      }
+      out += ch;
+      continue;
+    }
+    out += ch;
+    if (ch === '"') inString = true;
+  }
+  return out;
+}
+
+export function normalizeJsonTextForParse(raw: string): string {
+  return escapeControlCharsInsideJsonStrings(
+    decodeHtmlEntitiesInText(raw)
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/,\s*([}\]])/g, "$1"),
+  );
+}
+
+/** Largest `{...}` slice by brace depth (extension uses the same heuristic). */
+export function extractLargestJsonObjectString(raw: string): string {
+  const text = String(raw || "").trim();
+  if (!text) return "";
+
+  let depth = 0;
+  let start = -1;
+  let best = "";
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth += 1;
+      continue;
+    }
+    if (ch !== "}" || depth <= 0) continue;
+    depth -= 1;
+    if (depth === 0 && start >= 0) {
+      const candidate = text.slice(start, i + 1).trim();
+      if (candidate.length > best.length) best = candidate;
+      start = -1;
+    }
+  }
+  return best;
+}
+
+function tryParseObject(candidate: string): Record<string, unknown> | null {
+  const trimmed = String(candidate ?? "").trim();
+  if (!trimmed) return null;
+
+  const variants = [trimmed, normalizeJsonTextForParse(trimmed)];
+  for (const variant of variants) {
+    try {
+      const parsed = JSON.parse(variant) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      /* next variant */
+    }
+  }
+  return null;
+}
+
+function collectJsonCandidates(text: string): string[] {
+  const raw = decodeHtmlEntitiesInText(text);
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  const push = (s: string) => {
+    const t = String(s ?? "").trim();
+    if (!t || seen.has(t)) return;
+    seen.add(t);
+    out.push(t);
+  };
+
+  push(raw);
+
+  const fenceRe = /```(?:json)?\s*([\s\S]*?)```/gi;
+  let m: RegExpExecArray | null;
+  while ((m = fenceRe.exec(raw))) {
+    push(String(m[1] ?? ""));
+  }
+
+  const largest = extractLargestJsonObjectString(raw);
+  if (largest) push(largest);
+
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth += 1;
+    } else if (ch === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        push(raw.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+
+  return out.sort((a, b) => b.length - a.length);
+}
+
 export function looksLikeOptimizedResume(payload: Record<string, unknown>): boolean {
   let candidate: unknown = payload;
   for (const key of ["optimized_resume", "optimizedResume", "resume"]) {
@@ -50,50 +201,10 @@ export function looksLikeOptimizedResume(payload: Record<string, unknown>): bool
 }
 
 export function extractJsonObject(text: string): Record<string, unknown> | null {
-  const raw = String(text ?? "").trim();
-  if (!raw) return null;
-
-  const candidates: string[] = [raw];
-  const fenceRe = /```(?:json)?\s*([\s\S]*?)```/gi;
-  let m: RegExpExecArray | null;
-  while ((m = fenceRe.exec(raw))) {
-    const inner = String(m[1] ?? "").trim();
-    if (inner) candidates.push(inner);
-  }
-
+  const candidates = collectJsonCandidates(text);
   for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate) as unknown;
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      /* try brace extraction */
-    }
-
-    let depth = 0;
-    let start = -1;
-    for (let i = 0; i < candidate.length; i += 1) {
-      const ch = candidate[i];
-      if (ch === "{") {
-        if (depth === 0) start = i;
-        depth += 1;
-      } else if (ch === "}" && depth > 0) {
-        depth -= 1;
-        if (depth === 0 && start >= 0) {
-          const slice = candidate.slice(start, i + 1);
-          try {
-            const parsed = JSON.parse(slice) as unknown;
-            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-              return parsed as Record<string, unknown>;
-            }
-          } catch {
-            /* continue */
-          }
-          start = -1;
-        }
-      }
-    }
+    const parsed = tryParseObject(candidate);
+    if (parsed) return parsed;
   }
   return null;
 }
@@ -127,9 +238,17 @@ export function normalizeOptimizedResumePayload(
 }
 
 export function parseGptResultText(text: string): ParsedGptResult {
-  const json = extractJsonObject(text);
+  const trimmed = String(text ?? "").trim();
+  if (!trimmed) {
+    throw new Error("GPT result is empty");
+  }
+
+  const json = extractJsonObject(trimmed);
   if (!json) {
-    throw new Error("GPT result is empty or not valid JSON");
+    const preview = normalizeJsonTextForParse(trimmed).slice(0, 120);
+    throw new Error(
+      `Could not parse resume JSON (check for trailing commas or unescaped line breaks in strings). Preview: ${preview}${trimmed.length > 120 ? "…" : ""}`,
+    );
   }
   return normalizeOptimizedResumePayload(json);
 }

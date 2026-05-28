@@ -220,7 +220,13 @@ function handleCopy() {
 }
 
 function sendGptResultText(text, source = "unknown") {
-  const payload = normalizeJsonForSend(String(text || "").trim());
+  const check = tryParseResumeJsonPayload(String(text || "").trim());
+  if (!check.ok) {
+    console.warn("sendGptResultText skipped:", source, check.error);
+    showToast(check.error, "warning");
+    return;
+  }
+  const payload = check.normalized;
   if (!isUsableSelection(payload)) return;
 
   const now = Date.now();
@@ -254,6 +260,28 @@ function normalizeJsonForSend(raw) {
   if (!text) return "";
   const candidate = extractLargestJsonObject(text) || text;
   return escapeControlCharsInsideJsonStrings(candidate);
+}
+
+function tryParseResumeJsonPayload(text) {
+  const normalized = normalizeJsonForSend(text);
+  if (!normalized) return { ok: false, error: "Selection is empty." };
+  try {
+    const parsed = JSON.parse(normalized);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { ok: false, error: "Resume JSON must be a single object." };
+    }
+    const root =
+      parsed.optimized_resume || parsed.optimizedResume || parsed.resume || parsed;
+    if (!root || typeof root !== "object") {
+      return { ok: false, error: "Missing optimized_resume object." };
+    }
+    return { ok: true, normalized, parsed };
+  } catch (err) {
+    return {
+      ok: false,
+      error: `JSON parse failed: ${err?.message || "invalid syntax"}`,
+    };
+  }
 }
 
 function escapeControlCharsInsideJsonStrings(s) {
@@ -426,7 +454,14 @@ function sendFromToolbarButton(btn, text, messageType, defaultIconHtml) {
 
   const raw = String(text || lastToolbarSelectionText || "").trim();
   if (messageType === "SEND_GPT_RESULT") {
-    const payload = normalizeJsonForSend(raw);
+    const check = tryParseResumeJsonPayload(raw);
+    if (!check.ok) {
+      btn.innerHTML = defaultIconHtml;
+      btn.dataset.variant = "gpt";
+      showToast(check.error || "Select valid resume JSON (full GPT message).", "warning");
+      return false;
+    }
+    const payload = check.normalized;
     if (!isUsableSelection(payload)) {
       btn.innerHTML = defaultIconHtml;
       btn.dataset.variant = "gpt";
@@ -623,15 +658,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false;
     }
     const rawText = sanitizeAssistantText(latest.innerText || latest.textContent || "");
-    const text = extractLargestJsonObject(rawText) || rawText;
-    if (!isUsableSelection(text)) {
-      showToast("Latest message has no usable JSON yet.", "warning");
-      sendResponse({ status: "error", detail: "No usable JSON in latest message." });
+    const check = tryParseResumeJsonPayload(rawText);
+    if (!check.ok) {
+      showToast(check.error || "Latest message has no usable JSON yet.", "warning");
+      sendResponse({ status: "error", detail: check.error || "No usable JSON in latest message." });
       return false;
     }
     lastGptResultSentAt = 0;
     lastGptResultSentText = "";
-    sendGptResultText(text, "manual-capture");
+    sendGptResultText(check.normalized, "manual-capture");
     sendResponse({ status: "ok" });
     return false;
   }
@@ -643,12 +678,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false;
     }
     const rawText = sanitizeAssistantText(latest.innerText || latest.textContent || "");
-    const text = extractLargestJsonObject(rawText) || rawText;
-    if (!isUsableSelection(text)) {
-      sendResponse({ status: "error", detail: "No usable JSON in latest message." });
+    const check = tryParseResumeJsonPayload(rawText);
+    if (!check.ok) {
+      sendResponse({ status: "error", detail: check.error || "No usable JSON in latest message." });
       return false;
     }
-    sendResponse({ status: "ok", text });
+    sendResponse({ status: "ok", text: check.normalized });
     return false;
   }
 
@@ -764,7 +799,9 @@ function startAutoCaptureAfterSubmit() {
     if (!latest) return;
 
     const rawText = sanitizeAssistantText(latest.innerText || latest.textContent || "");
-    const text = extractLargestJsonObject(rawText) || rawText;
+    const check = tryParseResumeJsonPayload(rawText);
+    if (!check.ok) return;
+    const text = check.normalized;
     if (!isUsableSelection(text)) return;
 
     if (autoCaptureJob.lastText !== text) {
@@ -874,9 +911,7 @@ function getLatestAssistantMessageElement() {
     if (!(el instanceof HTMLElement)) continue;
     if (!isVisible(el)) continue;
     const text = sanitizeAssistantText(el.innerText || el.textContent || "");
-    const jsonText = extractLargestJsonObject(text);
-    if (isUsableSelection(jsonText)) return el;
-    if (isUsableSelection(text)) return el;
+    if (tryParseResumeJsonPayload(text).ok) return el;
   }
   return null;
 }

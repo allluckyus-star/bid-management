@@ -231,7 +231,11 @@ export function TeamJdPage({ teamId }: { teamId: string }) {
       if (draftSelection.mode === "manual") {
         if (draftManualSource === "upload") {
           if (pendingUploadFile) {
-            const item = await createManualJdSource(teamId, { file: pendingUploadFile });
+            const item = await createManualJdSource(teamId, {
+              file: pendingUploadFile,
+              source_origin: "upload",
+              local_file_path: pendingUploadFile.name,
+            });
             manualInputId = item.id;
             setManualSources((prev) => ({
               ...prev,
@@ -255,6 +259,7 @@ export function TeamJdPage({ teamId }: { teamId: string }) {
           const item = await createManualJdSource(teamId, {
             text: normalized,
             title: String(manualName || "").trim() || "manual-jd",
+            source_origin: "dashboard",
           });
           lastSavedManualTextRef.current = normalized;
           manualInputId = item.id;

@@ -10,7 +10,12 @@ export async function OPTIONS(request: Request) {
 
 export async function POST(request: Request) {
   return withTeamOrExtensionRoute(request, async (ctx) => {
-    const body = (await request.json()) as { field?: string; value?: string };
+    const body = (await request.json()) as {
+      field?: string;
+      value?: string;
+      page_url?: string;
+      captured_by?: string;
+    };
     const field = body.field === "name" ? "name" : body.field === "text" ? "text" : null;
     if (!field) {
       return NextResponse.json(
@@ -24,6 +29,8 @@ export async function POST(request: Request) {
       userId: ctx.userId,
       field,
       value: String(body.value ?? ""),
+      pageUrl: body.page_url ?? null,
+      capturedBy: body.captured_by ?? null,
     });
 
     return NextResponse.json(result, { headers: corsHeaders(request) });

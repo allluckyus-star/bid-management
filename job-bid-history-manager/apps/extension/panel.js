@@ -229,6 +229,36 @@ function manualPaneClass(kind) {
   return kind === "paste" ? `manual-pane ${selected ? "selected" : ""}` : `upload-zone ${selected ? "selected" : ""}`;
 }
 
+function jdSelectionMode() {
+  return state.jdDraft?.mode === "history" ? "latest" : state.jdDraft?.mode || "latest";
+}
+
+/** Update JD mode / manual pane highlights without re-rendering inputs (keeps focus). */
+function refreshJdSelectionUi() {
+  if (activeTab !== "JD") return;
+  const mode = jdSelectionMode();
+
+  contentEl.querySelectorAll("section[data-mode]").forEach((el) => {
+    const cardMode = el.getAttribute("data-mode");
+    el.className = modeCardClass(cardMode);
+  });
+
+  contentEl.querySelectorAll("[data-manual]").forEach((el) => {
+    const kind = el.getAttribute("data-manual");
+    el.className = manualPaneClass(kind);
+    const showBadge = mode === "manual" && state.jdManualSource === kind;
+    let badge = el.querySelector(".pane-badge");
+    if (showBadge && !badge) {
+      badge = document.createElement("span");
+      badge.className = "pane-badge";
+      badge.textContent = "Selected";
+      el.prepend(badge);
+    } else if (!showBadge && badge) {
+      badge.remove();
+    }
+  });
+}
+
 async function refreshContext() {
   const [status, page, syncData] = await Promise.all([
     send("GET_EXTENSION_STATUS"),
@@ -581,6 +611,7 @@ async function saveJdSelection() {
             fileBase64: arrayBufferToBase64(buffer),
             fileName: state.jdPendingFile.name,
             mimeType: state.jdPendingFile.type,
+            local_file_path: state.jdPendingFile.name,
           });
           if (!res.ok) throw new Error(res.error);
           manualInputId = res.item.id;
@@ -645,6 +676,7 @@ function wireTabActions() {
     el.addEventListener("click", (e) => {
       if (e.target.closest("[data-skip-mode-select], button, input, textarea, label, table, a")) return;
       selectJdMode(el.getAttribute("data-mode"));
+      refreshJdSelectionUi();
       void renderContent();
     });
   });
@@ -653,26 +685,28 @@ function wireTabActions() {
     el.addEventListener("click", (e) => {
       if (e.target.closest("textarea, input, label")) return;
       selectManualSource(el.getAttribute("data-manual"));
-      void renderContent();
+      refreshJdSelectionUi();
     });
   });
 
   const jdManual = document.getElementById("jdManualText");
   const jdManualTitle = document.getElementById("jdManualTitle");
+  const focusManualPaste = () => {
+    selectManualSource("paste");
+    refreshJdSelectionUi();
+  };
   jdManualTitle?.addEventListener("input", (e) => {
     state.jdManualTitleInput = String(e.target.value || "");
     selectManualSource("paste");
+    refreshJdSelectionUi();
   });
-  jdManualTitle?.addEventListener("focus", () => {
-    selectManualSource("paste");
-  });
+  jdManualTitle?.addEventListener("focus", focusManualPaste);
   jdManual?.addEventListener("input", (e) => {
     state.jdManualText = String(e.target.value || "");
     selectManualSource("paste");
+    refreshJdSelectionUi();
   });
-  jdManual?.addEventListener("focus", () => {
-    selectManualSource("paste");
-  });
+  jdManual?.addEventListener("focus", focusManualPaste);
 
   const jdUploadZone = document.getElementById("jdUploadZone");
   const jdFileInput = document.getElementById("jdFileInput");

@@ -52,17 +52,42 @@ export async function POST(request: Request) {
     let title = "";
     let text = "";
     let file: File | null = null;
+    let sourceOrigin = "dashboard";
+    let pageUrl: string | null = null;
+    let localFilePath: string | null = null;
+
     if (contentType.includes("multipart/form-data")) {
       const form = await request.formData();
       title = String(form.get("title") ?? "").trim();
       text = String(form.get("text") ?? "").trim();
       const f = form.get("file");
       file = f instanceof File ? f : null;
+      sourceOrigin = String(form.get("source_origin") ?? "dashboard").trim() || "dashboard";
+      pageUrl = String(form.get("page_url") ?? "").trim() || null;
+      localFilePath = String(form.get("local_file_path") ?? "").trim() || null;
     } else {
-      const body = (await request.json()) as { title?: string; text?: string };
+      const body = (await request.json()) as {
+        title?: string;
+        text?: string;
+        source_origin?: string;
+        page_url?: string;
+        local_file_path?: string;
+      };
       title = String(body.title ?? "").trim();
       text = String(body.text ?? "").trim();
+      sourceOrigin = String(body.source_origin ?? "dashboard").trim() || "dashboard";
+      pageUrl = String(body.page_url ?? "").trim() || null;
+      localFilePath = String(body.local_file_path ?? "").trim() || null;
     }
+
+    const origin =
+      sourceOrigin === "extension"
+        ? "extension"
+        : sourceOrigin === "page_selection"
+          ? "page_selection"
+          : sourceOrigin === "upload"
+            ? "upload"
+            : "dashboard";
 
     const item = await createManualJdInput({
       teamId: ctx.teamId,
@@ -70,6 +95,9 @@ export async function POST(request: Request) {
       title,
       text,
       file,
+      origin,
+      pageUrl,
+      localFilePath: localFilePath || (file?.name ? file.name : null),
     });
     return NextResponse.json({ item }, { status: 201, headers: corsHeaders(request) });
   });

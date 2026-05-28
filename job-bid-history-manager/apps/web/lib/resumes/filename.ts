@@ -21,11 +21,16 @@ export function buildExportFilename(params: {
   userName: string;
   companyName: string;
   jobTitle: string;
+  /** Used when company and role are both empty (e.g. manual JD name). */
+  fallbackLabel?: string;
 }): string {
   const namePart = sanitizeFilenameSegment(params.userName) || "Resume";
   const company = sanitizeFilenameSegment(params.companyName);
   const role = sanitizeFilenameSegment(params.jobTitle);
-  const inner = [company, role].filter(Boolean).join(" - ");
+  let inner = [company, role].filter(Boolean).join(" - ");
+  if (!inner) {
+    inner = sanitizeFilenameSegment(params.fallbackLabel ?? "");
+  }
   if (!inner) {
     throw new Error("Company name and role are required for export filename");
   }

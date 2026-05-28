@@ -11,6 +11,7 @@
   let toast = null;
   let hideTimer = null;
   let lastRange = null;
+  let pendingSelectionText = "";
 
   function selectedText() {
     const text = String(window.getSelection?.()?.toString?.() || "").trim();
@@ -44,12 +45,15 @@
     toast.setAttribute("role", "status");
     document.documentElement.appendChild(toast);
 
-    toolbar.addEventListener("mousedown", (e) => e.preventDefault());
+    toolbar.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      pendingSelectionText = selectedText();
+    });
     toolbar.addEventListener("click", (e) => {
       const btn = e.target.closest("button[data-field]");
       if (!btn) return;
       const field = btn.getAttribute("data-field");
-      void applySelection(field, btn);
+      void applySelection(field);
     });
   }
 
@@ -97,9 +101,11 @@
     hideTimer = setTimeout(showToolbar, HIDE_DELAY_MS);
   }
 
-  async function applySelection(field, btn) {
-    const text = selectedText();
+  async function applySelection(field) {
+    const text = pendingSelectionText || selectedText();
+    pendingSelectionText = "";
     if (!text) {
+      ensureUi();
       showToast("Select some text first.", true);
       return;
     }
@@ -110,10 +116,21 @@
     });
 
     try {
-      const res = await chrome.runtime.sendMessage({
-        type: "APPLY_JD_FROM_SELECTION",
-        field,
-        value: text,
+      const res = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(
+          {
+            type: "APPLY_JD_FROM_SELECTION",
+            field,
+            value: text,
+            pageUrl: field === "text" ? window.location.href : null,
+          },
+          (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          resolve(response);
+        });
       });
       if (!res?.ok) throw new Error(res?.error || "Failed to apply selection.");
       showToast(
@@ -124,6 +141,7 @@
       hideToolbar();
       window.getSelection?.()?.removeAllRanges?.();
     } catch (err) {
+      ensureUi();
       showToast(err?.message || "Could not update JD source.", true);
     } finally {
       buttons.forEach((b) => {

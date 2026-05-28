@@ -1,4 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  type ManualJdSyncOrigin,
+  syncManualJdToBidHistory,
+} from "@/lib/jobs/sync-manual-jd";
 
 function isMissingRelationError(error: { message?: string; code?: string } | null) {
   const msg = String(error?.message ?? "").toLowerCase();
@@ -30,7 +34,7 @@ async function extractPdfText(bytes: Buffer): Promise<string> {
 export type JdMode = "latest" | "history" | "manual";
 
 export type JdSelectionResolved =
-  | { mode: "manual"; jdText: string; jobId: null; label: string }
+  | { mode: "manual"; jdText: string; jobId: string | null; label: string; manualTitle: string }
   | { mode: "latest" | "history"; jdText: string; jobId: string; label: string };
 
 /** Apply browser text selection to team manual paste JD (name or body). */
@@ -39,6 +43,8 @@ export async function applyManualJdFromSelection(input: {
   userId: string;
   field: "name" | "text";
   value: string;
+  pageUrl?: string | null;
+  capturedBy?: string | null;
 }) {
   const value = String(input.value ?? "").trim();
   if (!value) throw new Error("Selection is empty.");
@@ -97,7 +103,22 @@ export async function applyManualJdFromSelection(input: {
     manualInputId,
   });
 
-  return { ok: true, manual_input_id: manualInputId, field: input.field };
+  let jobId: string | null = null;
+  if (extractedText.length >= 40) {
+    const sync = await syncManualJdToBidHistory({
+      teamId: input.teamId,
+      userId: input.userId,
+      manualInputId,
+      jdText: extractedText,
+      manualTitle: title,
+      origin: input.field === "text" && input.pageUrl ? "page_selection" : "extension",
+      pageUrl: input.field === "text" ? input.pageUrl : null,
+      capturedBy: input.capturedBy,
+    });
+    jobId = sync.jobId;
+  }
+
+  return { ok: true, manual_input_id: manualInputId, field: input.field, job_id: jobId };
 }
 
 export async function upsertTeamJdPreference(input: {
@@ -141,6 +162,10 @@ export async function createManualJdInput(input: {
   title?: string | null;
   text?: string | null;
   file?: File | null;
+  origin?: ManualJdSyncOrigin;
+  pageUrl?: string | null;
+  localFilePath?: string | null;
+  capturedBy?: string | null;
 }) {
   const admin = createAdminClient();
   let extractedText = String(input.text ?? "").trim();
@@ -204,27 +229,57 @@ export async function createManualJdInput(input: {
     .limit(1)
     .maybeSingle();
 
+  let row: {
+    id: string;
+    source_type: string;
+    title: string | null;
+    original_filename: string | null;
+    created_at: string;
+    extracted_text: string;
+    job_id?: string | null;
+  };
+
   if (existing?.id) {
     const { data, error } = await admin
       .from("team_jd_manual_inputs")
       .update(rowPayload)
       .eq("id", existing.id)
-      .select("id, source_type, title, original_filename, created_at, extracted_text")
+      .select("id, source_type, title, original_filename, created_at, extracted_text, job_id")
       .single();
     if (error) throw new Error(error.message);
-    return data;
+    row = data;
+  } else {
+    const { data, error } = await admin
+      .from("team_jd_manual_inputs")
+      .insert({
+        team_id: input.teamId,
+        ...rowPayload,
+      })
+      .select("id, source_type, title, original_filename, created_at, extracted_text, job_id")
+      .single();
+    if (error) throw new Error(error.message);
+    row = data;
   }
 
-  const { data, error } = await admin
-    .from("team_jd_manual_inputs")
-    .insert({
-      team_id: input.teamId,
-      ...rowPayload,
-    })
-    .select("id, source_type, title, original_filename, created_at, extracted_text")
-    .single();
-  if (error) throw new Error(error.message);
-  return data;
+  const origin: ManualJdSyncOrigin =
+    input.origin ?? (sourceType !== "text" ? "upload" : "dashboard");
+  const localPath =
+    input.localFilePath?.trim() ||
+    (sourceType !== "text" && originalFilename ? originalFilename : null);
+
+  const sync = await syncManualJdToBidHistory({
+    teamId: input.teamId,
+    userId: input.userId,
+    manualInputId: row.id,
+    jdText: extractedText,
+    manualTitle: title,
+    origin,
+    pageUrl: input.pageUrl,
+    localFilePath: localPath,
+    capturedBy: input.capturedBy,
+  });
+
+  return { ...row, job_id: sync.jobId ?? row.job_id ?? null };
 }
 
 export async function getTeamJdSelectionView(teamId: string, _userId: string) {
@@ -331,17 +386,31 @@ export async function resolveJdSourceForPrompt(teamId: string, _userId: string):
     if (!pref?.manual_input_id) throw new Error("No manual JD selected.");
     const { data: manual } = await admin
       .from("team_jd_manual_inputs")
-      .select("id, extracted_text, title, original_filename")
+      .select("id, extracted_text, title, original_filename, job_id")
       .eq("id", pref.manual_input_id)
       .eq("team_id", teamId)
       .maybeSingle();
     const jdText = String(manual?.extracted_text ?? "").trim();
     if (!jdText) throw new Error("Selected manual JD is empty.");
+    const manualTitle = String(manual?.title || manual?.original_filename || "Manual JD");
+    let jobId = manual?.job_id ?? null;
+    if (!jobId && jdText.length >= 40) {
+      const sync = await syncManualJdToBidHistory({
+        teamId,
+        userId: _userId,
+        manualInputId: manual!.id,
+        jdText,
+        manualTitle,
+        origin: "dashboard",
+      });
+      jobId = sync.jobId;
+    }
     return {
       mode: "manual",
       jdText,
-      jobId: null,
-      label: manual?.title || manual?.original_filename || "Manual JD",
+      jobId,
+      label: manualTitle,
+      manualTitle,
     };
   }
 

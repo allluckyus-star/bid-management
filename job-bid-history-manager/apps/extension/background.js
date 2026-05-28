@@ -204,7 +204,7 @@ function isValidUsernameFormat(username) {
   return /^[a-z0-9_-]{3,32}$/.test(String(username || "").trim().toLowerCase());
 }
 
-async function applyJdFromSelection(field, value) {
+async function applyJdFromSelection(field, value, pageUrl) {
   const settings = await loadExtensionSettings();
   if (!settings.captureToken) {
     throw new Error("Add a capture token in extension Settings.");
@@ -213,9 +213,11 @@ async function applyJdFromSelection(field, value) {
   if (!status.connected || !status.team_id) {
     throw new Error(status.error || "Extension not connected.");
   }
-  await applyJdFromSelection(settings.apiBaseUrl, settings.captureToken, status.team_id, {
+  await postApplyJdFromSelection(settings.apiBaseUrl, settings.captureToken, status.team_id, {
     field,
     value,
+    page_url: field === "text" ? pageUrl || null : null,
+    captured_by: status.captured_by || status.username || null,
   });
   const label = field === "name" ? "Manual JD name set." : "Manual JD text set.";
   notify("JD source", label);
@@ -552,8 +554,10 @@ async function submitGptResultText(text, opts = {}) {
   if (opts.autoDownload !== false) {
     try {
       await downloadLastExport();
-    } catch {
-      /* user can click Download manually */
+    } catch (dlErr) {
+      const msg = dlErr?.message || String(dlErr);
+      notify("Download failed", msg);
+      return { ...result, download_error: msg };
     }
   }
 
@@ -562,6 +566,8 @@ async function submitGptResultText(text, opts = {}) {
 
 async function downloadLastExport() {
   const settings = await loadExtensionSettings();
+  if (!settings.captureToken) throw new Error("Add capture token in Settings.");
+
   const opt = await loadActiveOptimization();
   const exportId = opt?.lastExportId;
   const teamId = opt?.teamId;
@@ -569,14 +575,23 @@ async function downloadLastExport() {
     throw new Error("No export ready yet. Run ChatGPT Prompt or send a GPT result first.");
   }
 
-  const leaf = opt.lastFilename || "resume.docx";
-  const downloadPath = await downloadFilenameWithUserFolder(leaf);
   const url = `${settings.apiBaseUrl}/api/team/${teamId}/resume-exports/${exportId}/download`;
-  await chrome.downloads.download({
-    url,
-    filename: downloadPath,
-    headers: [{ name: "Authorization", value: `Bearer ${settings.captureToken}` }],
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${settings.captureToken}` },
   });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(parseApiErrorBody(text, res.status));
+  }
+
+  const blob = await res.blob();
+  const leaf =
+    parseFilenameFromContentDisposition(res.headers.get("Content-Disposition")) ||
+    opt.lastFilename ||
+    "resume.docx";
+  const downloadPath = await downloadFilenameWithUserFolder(leaf);
+  await downloadBlobToPath(blob, downloadPath);
   return { ok: true, filename: downloadPath };
 }
 
@@ -647,7 +662,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       sendResponse({ ok: false, error: "Invalid field." });
       return true;
     }
-    applyJdFromSelection(field, String(message.value || ""))
+    applyJdFromSelection(field, String(message.value || ""), String(message.pageUrl || ""))
       .then(sendResponse)
       .catch((err) => sendResponse({ ok: false, error: err?.message || String(err) }));
     return true;
@@ -880,6 +895,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             text: message.text || "",
             file,
             title: message.title || "",
+            source_origin: file ? "upload" : "extension",
+            local_file_path: file?.name || message.local_file_path || "",
           });
           sendResponse({ ok: true, item });
           return;

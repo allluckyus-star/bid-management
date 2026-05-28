@@ -63,7 +63,8 @@ export async function POST(request: Request) {
     const filename = buildExportFilename({
       userName: me.display_name || me.email || "Resume",
       companyName: "",
-      jobTitle: jdLabel.slice(0, 80),
+      jobTitle: "",
+      fallbackLabel: jdLabel.slice(0, 80),
     });
 
     return new Response(new Uint8Array(docxBuffer), {

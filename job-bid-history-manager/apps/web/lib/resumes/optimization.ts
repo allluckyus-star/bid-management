@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import mammoth from "mammoth";
 
 import { exportOptimizedResumeToDocxBuffer } from "@/lib/resumes/docx-export";
-import { buildExportFilename } from "@/lib/resumes/filename";
+import { buildExportFilename, sanitizeFilenameSegment } from "@/lib/resumes/filename";
 import { parseGptResultText } from "@/lib/resumes/gpt-result-parse";
 import { getDefaultLibraryResumeText } from "@/lib/resumes/library";
 import { buildOptimizationPrompt } from "@/lib/resumes/prompt-template";
@@ -154,10 +154,25 @@ export async function processGptOptimizationResult(
     (parsed.optimized_resume.header as { name?: string })?.name ?? opt.user_display_name ?? "",
   ).trim();
 
+  const { data: jobRow } = await admin
+    .from("jobs")
+    .select("company_name, job_title, page_title")
+    .eq("id", opt.job_id)
+    .eq("team_id", teamId)
+    .maybeSingle();
+
+  const companyName = String(opt.company_name ?? jobRow?.company_name ?? "").trim();
+  const jobTitle = String(opt.job_title ?? jobRow?.job_title ?? "").trim();
+  const fallbackLabel = String(jobRow?.page_title ?? "").trim() || undefined;
+
   const display_filename = buildExportFilename({
     userName: headerName || String(opt.user_display_name ?? "Resume"),
-    companyName: String(opt.company_name ?? ""),
-    jobTitle: String(opt.job_title ?? ""),
+    companyName,
+    jobTitle,
+    fallbackLabel:
+      !sanitizeFilenameSegment(companyName) && !sanitizeFilenameSegment(jobTitle)
+        ? fallbackLabel
+        : undefined,
   });
 
   const exportId = crypto.randomUUID();

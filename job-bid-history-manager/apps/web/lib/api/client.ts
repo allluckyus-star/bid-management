@@ -448,12 +448,21 @@ export async function setTeamJdMode(
 
 export async function createManualJdSource(
   teamId: string,
-  payload: { title?: string; text?: string; file?: File | null },
+  payload: {
+    title?: string;
+    text?: string;
+    file?: File | null;
+    source_origin?: "dashboard" | "extension" | "upload";
+    local_file_path?: string;
+  },
 ): Promise<TeamJdManualItem> {
   const form = new FormData();
   if (payload.title) form.append("title", payload.title);
   if (payload.text) form.append("text", payload.text);
   if (payload.file) form.append("file", payload.file);
+  form.append("source_origin", payload.source_origin ?? "dashboard");
+  if (payload.local_file_path) form.append("local_file_path", payload.local_file_path);
+  else if (payload.file?.name) form.append("local_file_path", payload.file.name);
   const res = await request<{ item: TeamJdManualItem }>(`/api/team/${teamId}/jd-settings`, {
     method: "POST",
     body: form,

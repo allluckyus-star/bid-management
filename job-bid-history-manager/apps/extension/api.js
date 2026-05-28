@@ -174,11 +174,11 @@ async function fetchTeamJdSettings(baseUrl, token, teamId) {
   return text ? JSON.parse(text) : {};
 }
 
-async function applyJdFromSelection(baseUrl, token, teamId, { field, value }) {
+async function postApplyJdFromSelection(baseUrl, token, teamId, { field, value, page_url, captured_by }) {
   const res = await fetch(teamApiUrl(baseUrl, teamId, "/jd-settings/apply-selection"), {
     method: "POST",
     headers: teamApiHeaders(token),
-    body: JSON.stringify({ field, value }),
+    body: JSON.stringify({ field, value, page_url, captured_by }),
   });
   const text = await res.text();
   if (!res.ok) throw new Error(parseApiErrorBody(text, res.status));
@@ -196,11 +196,13 @@ async function patchTeamJdSettings(baseUrl, token, teamId, payload) {
   return text ? JSON.parse(text) : {};
 }
 
-async function postManualJdSource(baseUrl, token, teamId, { text, file, title }) {
+async function postManualJdSource(baseUrl, token, teamId, { text, file, title, source_origin, local_file_path }) {
   const form = new FormData();
   if (title) form.append("title", title);
   if (text) form.append("text", text);
   if (file) form.append("file", file);
+  if (source_origin) form.append("source_origin", source_origin);
+  if (local_file_path) form.append("local_file_path", local_file_path);
   const res = await fetch(teamApiUrl(baseUrl, teamId, "/jd-settings"), {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },

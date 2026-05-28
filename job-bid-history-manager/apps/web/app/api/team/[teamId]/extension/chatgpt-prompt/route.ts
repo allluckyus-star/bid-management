@@ -1,8 +1,6 @@
 import { resolveUserIdFromBearer } from "@/lib/auth/extension-token";
 import { jsonWithCors, optionsResponse } from "@/lib/http/cors";
 import { createResumeOptimization } from "@/lib/resumes/optimization";
-import { getDefaultLibraryResumeText } from "@/lib/resumes/library";
-import { buildOptimizationPrompt } from "@/lib/resumes/prompt-template";
 import { resolveJdSourceForPrompt } from "@/lib/resumes/jd-selection";
 import {
   parseTeamIdFromRequest,
@@ -48,22 +46,31 @@ export async function POST(request: Request) {
 
     const jdSource = await resolveJdSourceForPrompt(teamId, userId);
     if (jdSource.mode === "manual") {
-      const resume = await getDefaultLibraryResumeText(teamId, userId);
-      const promptText = buildOptimizationPrompt({
-        jdText: jdSource.jdText,
-        resumeText: resume.extracted_text,
-        companyName: "Company",
-        jobTitle: "Role",
-        userDisplayName: "Candidate",
-        customPrefix: body.prompt_prefix ?? null,
-      });
+      if (!jdSource.jobId) {
+        return jsonWithCors(
+          request,
+          {
+            error:
+              "Manual JD is too short to add to bid history. Paste at least ~40 characters, then save.",
+          },
+          400,
+        );
+      }
+
+      const result = await createResumeOptimization(
+        teamId,
+        userId,
+        jdSource.jobId,
+        body.library_resume_id ?? null,
+        body.prompt_prefix ?? null,
+      );
 
       return jsonWithCors(request, {
-        optimization_id: null,
-        prompt_text: promptText,
-        job_id: null,
+        optimization_id: result.optimization_id,
+        prompt_text: result.prompt_text,
+        job_id: jdSource.jobId,
         jd_mode: "manual",
-        manual_only: true,
+        manual_only: false,
         jd_label: jdSource.label,
       });
     }
