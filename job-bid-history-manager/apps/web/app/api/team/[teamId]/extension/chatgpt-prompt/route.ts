@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 
     const jdSource = await resolveJdSourceForPrompt(teamId, userId);
     if (jdSource.mode === "manual") {
-      const resume = await getDefaultLibraryResumeText(teamId);
+      const resume = await getDefaultLibraryResumeText(teamId, userId);
       const promptText = buildOptimizationPrompt({
         jdText: jdSource.jdText,
         resumeText: resume.extracted_text,

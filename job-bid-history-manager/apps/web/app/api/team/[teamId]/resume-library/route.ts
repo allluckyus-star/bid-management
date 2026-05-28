@@ -12,7 +12,8 @@ export async function GET(request: Request, { params }: Params) {
     if (teamId !== pathTeamId) {
       return NextResponse.json({ error: "Team mismatch" }, { status: 400 });
     }
-    const items = await listTeamResumeLibrary(teamId);
+    const { user } = await requireAuthUser();
+    const items = await listTeamResumeLibrary(teamId, user.id);
     return NextResponse.json({ items });
   });
 }

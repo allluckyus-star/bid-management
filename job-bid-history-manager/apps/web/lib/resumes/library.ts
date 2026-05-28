@@ -13,12 +13,13 @@ export type LibraryResumeRow = {
   uploaded_at: string;
 };
 
-export async function listTeamResumeLibrary(teamId: string): Promise<LibraryResumeRow[]> {
+export async function listTeamResumeLibrary(teamId: string, userId: string): Promise<LibraryResumeRow[]> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("team_resume_originals")
     .select("id, original_filename, file_size, is_default, uploaded_at")
     .eq("team_id", teamId)
+    .eq("user_id", userId)
     .order("uploaded_at", { ascending: false });
   if (error) throw new Error(error.message);
   return (data ?? []) as LibraryResumeRow[];
@@ -54,6 +55,7 @@ export async function uploadTeamResumeOriginal(
       .from("team_resume_originals")
       .update({ is_default: false })
       .eq("team_id", teamId)
+      .eq("user_id", userId)
       .eq("is_default", true);
   }
 
@@ -78,29 +80,32 @@ export async function uploadTeamResumeOriginal(
   return data as LibraryResumeRow;
 }
 
-export async function setDefaultLibraryResume(teamId: string, resumeId: string): Promise<void> {
+export async function setDefaultLibraryResume(teamId: string, userId: string, resumeId: string): Promise<void> {
   const admin = createAdminClient();
   const { data: row } = await admin
     .from("team_resume_originals")
     .select("id")
     .eq("id", resumeId)
     .eq("team_id", teamId)
+    .eq("user_id", userId)
     .maybeSingle();
   if (!row) throw new Error("Resume not found");
 
   await admin
     .from("team_resume_originals")
     .update({ is_default: false })
-    .eq("team_id", teamId);
+    .eq("team_id", teamId)
+    .eq("user_id", userId);
   const { error } = await admin
     .from("team_resume_originals")
     .update({ is_default: true })
     .eq("id", resumeId)
-    .eq("team_id", teamId);
+    .eq("team_id", teamId)
+    .eq("user_id", userId);
   if (error) throw new Error(error.message);
 }
 
-export async function getDefaultLibraryResumeText(teamId: string): Promise<{
+export async function getDefaultLibraryResumeText(teamId: string, userId: string): Promise<{
   id: string;
   extracted_text: string;
   original_filename: string;
@@ -110,6 +115,7 @@ export async function getDefaultLibraryResumeText(teamId: string): Promise<{
     .from("team_resume_originals")
     .select("id, extracted_text, original_filename")
     .eq("team_id", teamId)
+    .eq("user_id", userId)
     .eq("is_default", true)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -123,13 +129,14 @@ export async function getDefaultLibraryResumeText(teamId: string): Promise<{
   };
 }
 
-export async function deleteLibraryResume(teamId: string, resumeId: string): Promise<void> {
+export async function deleteLibraryResume(teamId: string, userId: string, resumeId: string): Promise<void> {
   const admin = createAdminClient();
   const { data: row } = await admin
     .from("team_resume_originals")
     .select("id, storage_path, is_default")
     .eq("id", resumeId)
     .eq("team_id", teamId)
+    .eq("user_id", userId)
     .maybeSingle();
   if (!row) throw new Error("Resume not found");
   if (row.is_default) throw new Error("Cannot delete the default resume. Set another default first.");

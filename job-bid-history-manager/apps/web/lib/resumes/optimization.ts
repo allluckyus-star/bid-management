@@ -75,7 +75,7 @@ export async function createResumeOptimization(
     resumeId = lib.id;
     resumeText = lib.extracted_text;
   } else {
-    const lib = await getDefaultLibraryResumeText(teamId);
+    const lib = await getDefaultLibraryResumeText(teamId, userId);
     resumeId = lib.id;
     resumeText = lib.extracted_text;
   }
