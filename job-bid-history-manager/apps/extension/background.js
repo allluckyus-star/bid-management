@@ -270,15 +270,13 @@ async function pasteAndSubmitOnTab(tabId, promptText, autoCapture = true, manual
   }
 }
 
-async function blobToDownloadDataUrl(blob) {
-  const buffer = await blob.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+async function downloadBlobToPath(blob, filename) {
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    await chrome.downloads.download({ url: objectUrl, filename, saveAs: false });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
   }
-  return `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${btoa(binary)}`;
 }
 
 /** Full Resume-sender style flow: server prompt → paste/send → auto capture → upload → download */
@@ -360,9 +358,8 @@ async function downloadManualDocxFromGptText(text, tabId) {
     { jd_label: modeData.manualJdLabel },
   );
 
-  const dataUrl = await blobToDownloadDataUrl(blob);
   const downloadPath = await downloadFilenameWithUserFolder(filename);
-  await chrome.downloads.download({ url: dataUrl, filename: downloadPath, saveAs: false });
+  await downloadBlobToPath(blob, downloadPath);
 
   notify("Manual JD", `Downloaded to ${downloadPath}`);
   if (chatTabId) {
@@ -541,9 +538,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           message.mimeType ||
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
         const blob = new Blob([buffer], { type: mimeType });
-        const dataUrl = await blobToDownloadDataUrl(blob);
         const downloadPath = await downloadFilenameWithUserFolder(leaf);
-        await chrome.downloads.download({ url: dataUrl, filename: downloadPath, saveAs: false });
+        await downloadBlobToPath(blob, downloadPath);
         sendResponse({ status: "ok", downloadPath });
       } catch (err) {
         sendResponse({ status: "error", detail: err?.message || String(err) });

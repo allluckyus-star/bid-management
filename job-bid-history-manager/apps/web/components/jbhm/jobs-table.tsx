@@ -205,7 +205,7 @@ export function JobsTable({
     if (!job.resume) return;
     setOverlayBusy(true);
     try {
-      const text = await fetchResumePreview(job.resume.id);
+      const text = await fetchResumePreview(teamId, job.resume.id);
       setResumeDialog({
         title: `Resume — ${job.resume.original_filename}`,
         text,
@@ -215,7 +215,7 @@ export function JobsTable({
     } finally {
       setOverlayBusy(false);
     }
-  }, []);
+  }, [teamId]);
 
   const interactionCtx = useMemo(
     () => ({ setHold: setInteractionHold, interactionHeld }),

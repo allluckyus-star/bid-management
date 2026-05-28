@@ -71,7 +71,7 @@ export function ResumeCell({ job, busy, onUpdated, onPreview }: Props) {
     if (!job.resume) return;
     try {
       const result = await downloadResumeWithSubfolder(
-        resumeDownloadUrl(job.resume.id),
+        resumeDownloadUrl(teamId, job.resume.id),
         job.resume.original_filename,
       );
       if (result.usedExtension && result.downloadPath) {

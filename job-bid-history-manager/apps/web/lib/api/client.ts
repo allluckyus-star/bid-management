@@ -209,13 +209,18 @@ export async function unlinkJobResume(teamId: string, jobId: string): Promise<vo
   await request<void>(`/api/jobs/${jobId}/resume${teamQs(teamId)}`, { method: "DELETE" });
 }
 
-export async function fetchResumePreview(resumeFileId: string): Promise<string> {
-  const res = await request<{ extracted_text: string }>(`/api/resumes/${resumeFileId}/preview`);
+export async function fetchResumePreview(
+  teamId: string,
+  resumeFileId: string,
+): Promise<string> {
+  const res = await request<{ extracted_text: string }>(
+    `/api/resumes/${resumeFileId}/preview${teamQs(teamId)}`,
+  );
   return res.extracted_text;
 }
 
-export function resumeDownloadUrl(resumeFileId: string): string {
-  return `/api/resumes/${resumeFileId}/download`;
+export function resumeDownloadUrl(teamId: string, resumeFileId: string): string {
+  return `/api/resumes/${resumeFileId}/download${teamQs(teamId)}`;
 }
 
 export async function fetchTimeline(
