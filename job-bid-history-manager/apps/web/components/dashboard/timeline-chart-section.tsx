@@ -43,8 +43,8 @@ export function TimelineChartSection({ dark }: Props) {
     [],
   );
 
-  /** Block pan/zoom and bucket switches while any timeline request is in flight. */
-  const chartLoading = timeline.isPending || timeline.isFetching;
+  /** Only block interactions on first load (or if data is missing during refetch). */
+  const chartLoading = timeline.isPending || (timeline.isFetching && !timeline.data);
 
   return (
     <TimelineChart
