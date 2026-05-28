@@ -77,11 +77,12 @@ export function ExtensionInstallPanel() {
             <strong>Developer mode</strong>, then <strong>Load unpacked</strong> and select that folder.
           </li>
           <li>
-            Right-click the extension icon → <strong>Options</strong> (or open Settings from the popup).
-            Paste your capture token and click <strong>Test connection</strong>.
+            Right-click the extension icon → <strong>Options</strong> (or use the workspace{" "}
+            <strong>Settings</strong> tab). Paste your capture token and validate your username.
           </li>
           <li>
-            Capture jobs from the toolbar popup or right-click the page →{" "}
+            On a job listing page, click the extension icon to open the right-side workspace panel.
+            Use <strong>Capture job</strong> in the panel footer, or right-click the page →{" "}
             <strong>Capture this page to Job Bid History</strong>.
           </li>
         </ol>

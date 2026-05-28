@@ -5,6 +5,8 @@ const CHATGPT_URL_PATTERNS = [
   "https://www.chatgpt.com/*",
   "https://chat.openai.com/*",
 ];
+const HISTORY_KEY = "captureHistory";
+const MAX_CAPTURE_HISTORY = 5;
 
 function notify(title, message) {
   chrome.notifications.create({
@@ -78,6 +80,62 @@ async function getActiveTab() {
   return tabs[0] ?? null;
 }
 
+const NON_INJECTABLE_URL_PREFIXES = [
+  "chrome://",
+  "edge://",
+  "about:",
+  "chrome-extension://",
+];
+
+function tabUrlInjectable(url) {
+  const u = String(url || "");
+  return u && !NON_INJECTABLE_URL_PREFIXES.some((prefix) => u.startsWith(prefix));
+}
+
+async function ensurePanelHost(tabId) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, { type: "GET_WORKSPACE_STATE" });
+  } catch (err) {
+    if (!isNoReceiverError(err)) throw err;
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["panel-host.js"],
+    });
+    await sleep(200);
+    return await chrome.tabs.sendMessage(tabId, { type: "GET_WORKSPACE_STATE" });
+  }
+}
+
+async function sendWorkspaceMessage(tabId, message) {
+  await ensurePanelHost(tabId);
+  return chrome.tabs.sendMessage(tabId, message);
+}
+
+async function toggleWorkspaceOnTab(tab) {
+  if (!tab?.id) {
+    notify("Job Bid Assistant", "No active tab.");
+    return { ok: false, error: "No active tab." };
+  }
+  if (!tabUrlInjectable(tab.url)) {
+    notify(
+      "Job Bid Assistant",
+      "Open a job site in a normal tab first (not chrome:// or the extensions page).",
+    );
+    return { ok: false, error: "Workspace cannot open on this page." };
+  }
+  try {
+    return await sendWorkspaceMessage(tab.id, { type: "TOGGLE_WORKSPACE" });
+  } catch (err) {
+    const msg = err?.message || String(err);
+    notify("Job Bid Assistant", msg);
+    return { ok: false, error: msg };
+  }
+}
+
+chrome.action.onClicked.addListener((tab) => {
+  void toggleWorkspaceOnTab(tab);
+});
+
 function tabIsChatGpt(tab) {
   try {
     return isChatGptHostname(new URL(tab?.url || "").hostname);
@@ -111,6 +169,13 @@ function isNoReceiverError(err) {
 
 async function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function base64ToUint8Array(base64) {
+  const bin = atob(String(base64 || ""));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
+  return out;
 }
 
 async function tryInjectChatGptContentScript(tabId) {
@@ -170,6 +235,13 @@ async function captureActiveTab(tabId) {
     );
 
     const status = await getExtensionStatus();
+    await appendCaptureHistory({
+      title: pageData?.page_title || "",
+      company: result?.company_name || "",
+      url: pageData?.source_url || "",
+      capturedAt: new Date().toISOString(),
+      jobId: result?.job_id || null,
+    });
     if (result.job_id && status.team_id) {
       await saveActiveJobContext({
         teamId: status.team_id,
@@ -187,6 +259,13 @@ async function captureActiveTab(tabId) {
   } finally {
     capturingTabIds.delete(tabId);
   }
+}
+
+async function appendCaptureHistory(row) {
+  const data = await chrome.storage.local.get({ [HISTORY_KEY]: [] });
+  const list = Array.isArray(data[HISTORY_KEY]) ? data[HISTORY_KEY] : [];
+  const next = [row, ...list].slice(0, MAX_CAPTURE_HISTORY);
+  await chrome.storage.local.set({ [HISTORY_KEY]: next });
 }
 
 async function getExtensionStatus() {
@@ -288,13 +367,23 @@ async function pasteAndSubmitOnTab(tabId, promptText, autoCapture = true, manual
   }
 }
 
-async function downloadBlobToPath(blob, filename) {
-  const objectUrl = URL.createObjectURL(blob);
-  try {
-    await chrome.downloads.download({ url: objectUrl, filename, saveAs: false });
-  } finally {
-    URL.revokeObjectURL(objectUrl);
+async function blobToDataUrl(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
   }
+  const base64 = btoa(binary);
+  const mime = blob.type || "application/octet-stream";
+  return `data:${mime};base64,${base64}`;
+}
+
+async function downloadBlobToPath(blob, filename) {
+  // MV3 service workers may not expose URL.createObjectURL reliably.
+  const dataUrl = await blobToDataUrl(blob);
+  await chrome.downloads.download({ url: dataUrl, filename, saveAs: false });
 }
 
 /** Full Resume-sender style flow: server prompt → paste/send → auto capture → upload → download */
@@ -481,6 +570,35 @@ chrome.commands.onCommand.addListener(async (command) => {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   const type = message?.type;
 
+  if (
+    type === "OPEN_WORKSPACE" ||
+    type === "CLOSE_WORKSPACE" ||
+    type === "TOGGLE_WORKSPACE" ||
+    type === "GET_WORKSPACE_STATE" ||
+    type === "SET_WORKSPACE_WIDTH" ||
+    type === "SET_WORKSPACE_COLLAPSED"
+  ) {
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+      const tab = tabs[0];
+      const tabId = tab?.id;
+      if (!tabId) {
+        sendResponse({ ok: false, error: "No active tab." });
+        return;
+      }
+      if (!tabUrlInjectable(tab.url)) {
+        sendResponse({ ok: false, error: "Workspace cannot open on this page." });
+        return;
+      }
+      try {
+        const out = await sendWorkspaceMessage(tabId, message);
+        sendResponse(out || { ok: true });
+      } catch (err) {
+        sendResponse({ ok: false, error: err?.message || "Workspace message failed." });
+      }
+    });
+    return true;
+  }
+
   if (type === "GET_EXTENSION_STATUS") {
     getExtensionStatus().then(sendResponse);
     return true;
@@ -499,6 +617,36 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (type === "CAPTURE_FROM_PANEL") {
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+      const tab = tabs[0];
+      if (!tab?.id) {
+        sendResponse({ ok: false, error: "No active tab." });
+        return;
+      }
+      const out = await captureActiveTab(tab.id);
+      sendResponse(out);
+    });
+    return true;
+  }
+
+  if (type === "GET_PAGE_CONTEXT" || type === "GET_SELECTED_TEXT") {
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+      const tab = tabs[0];
+      if (!tab?.id) {
+        sendResponse({ status: "error", detail: "No active tab." });
+        return;
+      }
+      try {
+        const out = await chrome.tabs.sendMessage(tab.id, { type });
+        sendResponse(out || {});
+      } catch (err) {
+        sendResponse({ status: "error", detail: err?.message || "Could not read page context." });
+      }
+    });
+    return true;
+  }
+
   if (type === "TEST_CONNECTION") {
     loadExtensionSettings()
       .then(async (settings) => {
@@ -512,6 +660,32 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .catch((err) => {
         sendResponse({ ok: false, error: err?.message || String(err) });
       });
+    return true;
+  }
+
+  if (type === "VALIDATE_USERNAME") {
+    (async () => {
+      try {
+        const settings = await loadExtensionSettings();
+        if (!settings.captureToken) {
+          sendResponse({ ok: false, error: "Add a capture token first." });
+          return;
+        }
+        const username = String(message.username || "").trim().toLowerCase();
+        if (!/^[a-z0-9_-]{3,32}$/.test(username)) {
+          sendResponse({
+            ok: false,
+            error: "Invalid username format. Use 3-32 lowercase letters, numbers, underscore, or hyphen.",
+          });
+          return;
+        }
+        await validateExtensionUsername(settings.apiBaseUrl, settings.captureToken, username);
+        await saveExtensionSettings({ username, usernameValidatedAt: new Date().toISOString() });
+        sendResponse({ ok: true, username });
+      } catch (err) {
+        sendResponse({ ok: false, error: err?.message || "Username validation failed." });
+      }
+    })();
     return true;
   }
 
@@ -587,6 +761,115 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     chrome.storage.local.set({ enabled: message.enabled !== false }).then(() => {
       sendResponse({ status: "ok" });
     });
+    return true;
+  }
+
+  if (type === "PANEL_API") {
+    (async () => {
+      try {
+        const settings = await loadExtensionSettings();
+        const action = message.action;
+
+        if (action === "SAVE_TOKEN") {
+          const token = String(message.token || "").trim();
+          if (!token) {
+            sendResponse({ ok: false, error: "Paste a capture token first." });
+            return;
+          }
+          await saveExtensionSettings({ captureToken: token });
+          sendResponse({ ok: true });
+          return;
+        }
+        if (action === "SAVE_ENV") {
+          const apiEnv = message.apiEnv === "local" ? "local" : "production";
+          await saveExtensionSettings({ apiEnv });
+          sendResponse({ ok: true, apiEnv });
+          return;
+        }
+
+        const status = await getExtensionStatus();
+        if (!settings.captureToken) {
+          sendResponse({ ok: false, error: "Add capture token in Settings." });
+          return;
+        }
+        if (!status.connected) {
+          sendResponse({ ok: false, error: status.error || "Extension not connected." });
+          return;
+        }
+        const teamId = status.team_id;
+        if (!teamId) {
+          sendResponse({ ok: false, error: "No team on token." });
+          return;
+        }
+
+        const base = settings.apiBaseUrl;
+        const token = settings.captureToken;
+
+        if (action === "FETCH_JD_SETTINGS") {
+          const data = await fetchTeamJdSettings(base, token, teamId);
+          sendResponse({ ok: true, data });
+          return;
+        }
+        if (action === "PATCH_JD_SETTINGS") {
+          await patchTeamJdSettings(base, token, teamId, message.payload || {});
+          sendResponse({ ok: true });
+          return;
+        }
+        if (action === "CREATE_MANUAL_JD") {
+          let file = null;
+          if (message.fileBase64 && message.fileName) {
+            const bytes = base64ToUint8Array(message.fileBase64);
+            file = new File([bytes], message.fileName, {
+              type: message.mimeType || "application/octet-stream",
+            });
+          } else if (message.buffer && message.fileName) {
+            file = new File([message.buffer], message.fileName, {
+              type: message.mimeType || "application/octet-stream",
+            });
+          }
+          const item = await postManualJdSource(base, token, teamId, {
+            text: message.text || "",
+            file,
+            title: message.title || "",
+          });
+          sendResponse({ ok: true, item });
+          return;
+        }
+        if (action === "FETCH_RESUME_LIBRARY") {
+          const data = await fetchResumeLibrary(base, token, teamId);
+          sendResponse({ ok: true, data });
+          return;
+        }
+        if (action === "UPLOAD_RESUME") {
+          if ((!message.fileBase64 && !message.buffer) || !message.fileName) {
+            sendResponse({ ok: false, error: "Missing file data." });
+            return;
+          }
+          const fileBits = message.fileBase64 ? base64ToUint8Array(message.fileBase64) : message.buffer;
+          const file = new File([fileBits], message.fileName, {
+            type:
+              message.mimeType ||
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          });
+          const item = await uploadResumeLibrary(base, token, teamId, file, message.setDefault === true);
+          sendResponse({ ok: true, item });
+          return;
+        }
+        if (action === "SET_RESUME_DEFAULT") {
+          await patchResumeLibraryItem(base, token, teamId, String(message.resumeId || ""));
+          sendResponse({ ok: true });
+          return;
+        }
+        if (action === "DELETE_RESUME") {
+          await deleteResumeLibraryItem(base, token, teamId, String(message.resumeId || ""));
+          sendResponse({ ok: true });
+          return;
+        }
+        sendResponse({ ok: false, error: `Unknown action: ${action}` });
+      } catch (err) {
+        sendResponse({ ok: false, error: err?.message || String(err) });
+      }
+    })();
     return true;
   }
 

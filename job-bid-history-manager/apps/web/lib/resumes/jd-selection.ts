@@ -27,6 +27,23 @@ async function extractPdfText(bytes: Buffer): Promise<string> {
   }
 }
 
+function deriveManualTitleFromText(text: string): string | null {
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .slice(0, 20);
+  if (!lines.length) return null;
+
+  const atLine = lines.find((line) => /\s+at\s+/i.test(line) && line.length >= 8);
+  if (atLine) return atLine.slice(0, 120);
+
+  const titled = lines.find((line) => /(engineer|developer|manager|architect|analyst|designer|director|lead)/i.test(line));
+  if (titled) return titled.slice(0, 120);
+
+  return lines[0].slice(0, 120);
+}
+
 export type JdMode = "latest" | "history" | "manual";
 
 export type JdSelectionResolved =
@@ -48,16 +65,14 @@ export async function upsertTeamJdPreference(input: {
     updated_at: new Date().toISOString(),
   };
 
-  const { data: existing, error: readErr } = await admin
+  const { data: existingRows, error: readErr } = await admin
     .from("team_jd_preferences")
     .select("id")
-    .eq("team_id", input.teamId)
-    .eq("user_id", input.userId)
-    .maybeSingle();
+    .eq("team_id", input.teamId);
   if (readErr) throw new Error(readErr.message);
 
-  if (existing?.id) {
-    const { error } = await admin.from("team_jd_preferences").update(payload).eq("id", existing.id);
+  if (existingRows?.length) {
+    const { error } = await admin.from("team_jd_preferences").update(payload).eq("team_id", input.teamId);
     if (error) throw new Error(error.message);
     return;
   }
@@ -83,6 +98,7 @@ export async function createManualJdInput(input: {
   let originalFilename: string | null = null;
   let mimeType: string | null = null;
   let storagePath: string | null = null;
+  let derivedTitleFromFileName: string | null = null;
 
   if (input.file) {
     const file = input.file;
@@ -90,6 +106,7 @@ export async function createManualJdInput(input: {
     const lower = filename.toLowerCase();
     const bytes = Buffer.from(await file.arrayBuffer());
     originalFilename = filename || null;
+    derivedTitleFromFileName = filename ? filename.replace(/\.(docx|pdf)$/i, "").trim() : null;
     mimeType = file.type || null;
 
     if (lower.endsWith(".docx")) {
@@ -115,38 +132,66 @@ export async function createManualJdInput(input: {
     throw new Error("No JD text found. Paste text or upload a readable .docx/.pdf file.");
   }
 
+  const normalizedTitle = String(input.title ?? "").trim();
+  const autoTitle = deriveManualTitleFromText(extractedText) || derivedTitleFromFileName || null;
+  const title = normalizedTitle || autoTitle;
+
+  const rowPayload = {
+    user_id: input.userId,
+    source_type: sourceType,
+    title,
+    original_filename: originalFilename,
+    mime_type: mimeType,
+    storage_path: storagePath,
+    extracted_text: extractedText.slice(0, 500000),
+  };
+
+  const { data: existing } = await admin
+    .from("team_jd_manual_inputs")
+    .select("id")
+    .eq("team_id", input.teamId)
+    .eq("source_type", sourceType)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existing?.id) {
+    const { data, error } = await admin
+      .from("team_jd_manual_inputs")
+      .update(rowPayload)
+      .eq("id", existing.id)
+      .select("id, source_type, title, original_filename, created_at, extracted_text")
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
   const { data, error } = await admin
     .from("team_jd_manual_inputs")
     .insert({
       team_id: input.teamId,
-      user_id: input.userId,
-      source_type: sourceType,
-      title: String(input.title ?? "").trim() || null,
-      original_filename: originalFilename,
-      mime_type: mimeType,
-      storage_path: storagePath,
-      extracted_text: extractedText.slice(0, 500000),
+      ...rowPayload,
     })
-    .select("id, source_type, title, original_filename, created_at")
+    .select("id, source_type, title, original_filename, created_at, extracted_text")
     .single();
   if (error) throw new Error(error.message);
   return data;
 }
 
-export async function getTeamJdSelectionView(teamId: string, userId: string) {
+export async function getTeamJdSelectionView(teamId: string, _userId: string) {
   const admin = createAdminClient();
   const { data: pref } = await admin
     .from("team_jd_preferences")
     .select("mode, history_job_id, manual_input_id, updated_at")
     .eq("team_id", teamId)
-    .eq("user_id", userId)
+    .order("updated_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   const { data: manualItems, error: manualErr } = await admin
     .from("team_jd_manual_inputs")
-    .select("id, source_type, title, original_filename, created_at")
+    .select("id, source_type, title, original_filename, created_at, extracted_text")
     .eq("team_id", teamId)
-    .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(30);
   if (manualErr) throw new Error(manualErr.message);
@@ -176,6 +221,15 @@ export async function getTeamJdSelectionView(teamId: string, userId: string) {
     }
   }
 
+  const items = (manualItems ?? []).map((x) => ({
+    ...x,
+    label: x.title || x.original_filename || `${x.source_type.toUpperCase()} JD`,
+  }));
+
+  const selectedRow = pref?.manual_input_id
+    ? items.find((x) => x.id === pref.manual_input_id) ?? null
+    : null;
+
   return {
     selection: {
       mode: (pref?.mode as JdMode | undefined) ?? "latest",
@@ -183,10 +237,15 @@ export async function getTeamJdSelectionView(teamId: string, userId: string) {
       manual_input_id: pref?.manual_input_id ?? null,
       updated_at: pref?.updated_at ?? null,
     },
-    manual_items: (manualItems ?? []).map((x) => ({
-      ...x,
-      label: x.title || x.original_filename || `${x.source_type.toUpperCase()} JD`,
-    })),
+    selected_manual: selectedRow
+      ? {
+          id: selectedRow.id,
+          source_type: selectedRow.source_type,
+          label: selectedRow.label,
+          extracted_text: String(selectedRow.extracted_text ?? ""),
+        }
+      : null,
+    manual_items: items,
     history_items: (jobs ?? []).map((j) => ({
       id: j.id,
       company_name: j.company_name,
@@ -199,13 +258,14 @@ export async function getTeamJdSelectionView(teamId: string, userId: string) {
   };
 }
 
-export async function resolveJdSourceForPrompt(teamId: string, userId: string): Promise<JdSelectionResolved> {
+export async function resolveJdSourceForPrompt(teamId: string, _userId: string): Promise<JdSelectionResolved> {
   const admin = createAdminClient();
   const { data: pref, error: prefError } = await admin
     .from("team_jd_preferences")
     .select("mode, history_job_id, manual_input_id")
     .eq("team_id", teamId)
-    .eq("user_id", userId)
+    .order("updated_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (prefError) {
@@ -225,7 +285,6 @@ export async function resolveJdSourceForPrompt(teamId: string, userId: string): 
       .select("id, extracted_text, title, original_filename")
       .eq("id", pref.manual_input_id)
       .eq("team_id", teamId)
-      .eq("user_id", userId)
       .maybeSingle();
     const jdText = String(manual?.extracted_text ?? "").trim();
     if (!jdText) throw new Error("Selected manual JD is empty.");
@@ -243,7 +302,6 @@ export async function resolveJdSourceForPrompt(teamId: string, userId: string): 
       .from("jobs")
       .select("id")
       .eq("team_id", teamId)
-      .eq("user_id", userId)
       .is("deleted_at", null)
       .order("captured_at", { ascending: false })
       .limit(1)

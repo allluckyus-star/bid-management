@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Job Bid History Capture",
-  "version": "0.7.6",
+  "version": "0.8.16",
   "description": "Capture job pages, optimize resumes via ChatGPT, and sync to your team dashboard.",
   "permissions": ["storage", "activeTab", "scripting", "contextMenus", "notifications", "downloads"],
   "options_ui": {
@@ -15,8 +15,7 @@
     "http://*/*"
   ],
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "Job Bid Capture",
+    "default_title": "Job Bid Assistant — click to open side panel on this page",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -48,6 +47,11 @@
       "run_at": "document_idle"
     },
     {
+      "matches": ["<all_urls>"],
+      "js": ["panel-host.js"],
+      "run_at": "document_idle"
+    },
+    {
       "matches": [
         "https://chatgpt.com/*",
         "https://www.chatgpt.com/*",
@@ -64,6 +68,12 @@
       ],
       "js": ["web-bridge.js"],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["panel.html", "panel.css", "panel.js", "config.js", "storage.js", "api.js", "prompt-defaults.js"],
+      "matches": ["<all_urls>"]
     }
   ],
   "icons": {

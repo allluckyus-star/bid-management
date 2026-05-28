@@ -396,6 +396,14 @@ export type TeamJdManualItem = {
   original_filename: string | null;
   created_at: string;
   label: string;
+  extracted_text?: string;
+};
+
+export type TeamJdSelectedManual = {
+  id: string;
+  source_type: "text" | "docx" | "pdf";
+  label: string;
+  extracted_text: string;
 };
 
 export type TeamJdHistoryItem = {
@@ -415,6 +423,7 @@ export type TeamJdSelectionView = {
     manual_input_id: string | null;
     updated_at: string | null;
   };
+  selected_manual: TeamJdSelectedManual | null;
   manual_items: TeamJdManualItem[];
   history_items: TeamJdHistoryItem[];
 };

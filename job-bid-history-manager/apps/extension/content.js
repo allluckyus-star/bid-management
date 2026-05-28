@@ -2,6 +2,7 @@
  * Capture visible page text only (no HTML/CSS).
  */
 const MAX_CHARS = 200000;
+const PREVIEW_CHARS = 3000;
 
 function capturePage() {
   const captured_text = (document.body?.innerText || "").trim().slice(0, MAX_CHARS);
@@ -10,6 +11,23 @@ function capturePage() {
     source_url: window.location.href,
     page_title: document.title || "",
     capture_method: "document.body.innerText",
+  };
+}
+
+function selectedText() {
+  return String(window.getSelection?.()?.toString?.() || "").trim();
+}
+
+function pageContext() {
+  const full = (document.body?.innerText || "").trim();
+  const preview = full.slice(0, PREVIEW_CHARS);
+  return {
+    url: window.location.href,
+    title: document.title || "",
+    domain: window.location.hostname || "",
+    selectedText: selectedText(),
+    visibleTextPreview: preview,
+    visibleTextLength: full.length,
   };
 }
 
@@ -38,6 +56,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     } catch {
       sendResponse(null);
     }
+    return true;
+  }
+
+  if (message?.type === "GET_PAGE_CONTEXT") {
+    sendResponse(pageContext());
+    return true;
+  }
+
+  if (message?.type === "GET_SELECTED_TEXT") {
+    sendResponse({ selectedText: selectedText() });
     return true;
   }
 

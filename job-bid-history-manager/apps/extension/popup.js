@@ -1,20 +1,14 @@
 const statusCardEl = document.getElementById("statusCard");
 const statusLabelEl = document.getElementById("statusLabel");
 const statusDetailEl = document.getElementById("statusDetail");
-const toggleBtn = document.getElementById("toggleBtn");
+const openWorkspaceBtn = document.getElementById("openWorkspaceBtn");
 const captureBtn = document.getElementById("captureBtn");
 const promptBtn = document.getElementById("promptBtn");
-const editPromptBtn = document.getElementById("editPromptBtn");
 const downloadBtn = document.getElementById("downloadBtn");
 const openDashboardBtn = document.getElementById("openDashboard");
 const openSettingsBtn = document.getElementById("openSettings");
 const statusEl = document.getElementById("status");
 const hintEl = document.getElementById("hint");
-const promptEditor = document.getElementById("promptEditor");
-const promptLocked = document.getElementById("promptLocked");
-const promptTitle = promptBtn.querySelector(".button-title");
-
-let promptEditorExpanded = false;
 
 const PRODUCTION_DASHBOARD = `${JBHM_CONFIG.PRODUCTION_URL}/dashboard`;
 
@@ -39,23 +33,18 @@ function setButtonsEnabled(enabled, connected, usernameReady) {
   captureBtn.disabled = !enabled || !connected || !usernameReady;
   promptBtn.disabled = !enabled || !connected;
   downloadBtn.disabled = !enabled || !connected;
+  openWorkspaceBtn.disabled = !enabled || !connected;
 }
 
 async function updateUI() {
-  const [localData, syncData, status] = await Promise.all([
+  const [localData, status] = await Promise.all([
     chrome.storage.local.get({ enabled: true }),
-    chrome.storage.sync.get("promptTemplate"),
     send("GET_EXTENSION_STATUS"),
   ]);
 
   const enabled = localData.enabled !== false;
   const connected = Boolean(status?.connected);
   const usernameReady = Boolean(status?.username_validated);
-
-  promptLocked.value = LOCKED_PROMPT_SUFFIX_PREVIEW;
-  if (!promptEditorExpanded || document.activeElement !== promptEditor) {
-    promptEditor.value = String(syncData.promptTemplate || DEFAULT_PROMPT_TEMPLATE);
-  }
 
   statusCardEl.classList.remove("ok", "warn", "err");
 
@@ -85,27 +74,23 @@ async function updateUI() {
     setButtonsEnabled(false, false, false);
   }
 
-  if (enabled) {
-    toggleBtn.textContent = "Disable";
-  } else {
-    toggleBtn.textContent = "Enable";
-  }
-
   hintEl.textContent = enabled
     ? connected
       ? usernameReady
-        ? "1) Capture job page  2) Open ChatGPT  3) ChatGPT Prompt (Alt+W). Select wrong JSON? Select text → GPT button."
-        : "Set and validate your username in Settings."
-      : "Add capture token in Settings."
+        ? "Open Workspace to review before saving."
+        : "Validate username in Settings."
+      : "Set capture token in Settings."
     : "Extension is OFF.";
 }
 
-toggleBtn.addEventListener("click", async () => {
-  const data = await chrome.storage.local.get({ enabled: true });
-  const next = !(data.enabled !== false);
-  await chrome.storage.local.set({ enabled: next });
-  await send("SET_EXTENSION_ENABLED", { enabled: next });
-  updateUI();
+openWorkspaceBtn.addEventListener("click", async () => {
+  const res = await send("OPEN_WORKSPACE");
+  if (res?.ok === false) {
+    setInlineStatus(res?.error || "Workspace could not open on this page.", "err");
+    return;
+  }
+  setInlineStatus("Workspace opened.", "ok");
+  window.close();
 });
 
 openSettingsBtn.addEventListener("click", () => {
@@ -133,7 +118,6 @@ captureBtn.addEventListener("click", async () => {
 
 promptBtn.addEventListener("click", async () => {
   promptBtn.disabled = true;
-  promptTitle.textContent = "Sending…";
   setInlineStatus("Building prompt and sending to ChatGPT…");
 
   const res = await send("GENERATE_CHATGPT_PROMPT");
@@ -144,18 +128,7 @@ promptBtn.addEventListener("click", async () => {
     setInlineStatus(res?.detail || "Could not run ChatGPT Prompt.", "err");
   }
 
-  promptTitle.textContent = "ChatGPT Prompt";
   updateUI();
-});
-
-editPromptBtn.addEventListener("click", async () => {
-  promptEditorExpanded = !promptEditorExpanded;
-  document.body.classList.toggle("expanded", promptEditorExpanded);
-  editPromptBtn.textContent = promptEditorExpanded ? "Close Prompt" : "Edit Prompt";
-  if (promptEditorExpanded) {
-    const data = await chrome.storage.sync.get("promptTemplate");
-    promptEditor.value = String(data.promptTemplate || DEFAULT_PROMPT_TEMPLATE);
-  }
 });
 
 downloadBtn.addEventListener("click", async () => {
@@ -163,10 +136,6 @@ downloadBtn.addEventListener("click", async () => {
   const res = await send("DOWNLOAD_EXPORT");
   if (res?.status === "ok") setInlineStatus("Download started.", "ok");
   else setInlineStatus(res?.detail || "No export yet.", "err");
-});
-
-promptEditor.addEventListener("input", () => {
-  chrome.storage.sync.set({ promptTemplate: promptEditor.value });
 });
 
 updateUI();

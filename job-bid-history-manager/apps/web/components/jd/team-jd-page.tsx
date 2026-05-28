@@ -82,17 +82,35 @@ export function TeamJdPage({ teamId }: { teamId: string }) {
     let uploadId: string | null = null;
     let uploadLabel: string | null = null;
     for (const item of v.manual_items) {
-      if (item.source_type === "text") pasteId = item.id;
-      else {
+      if (item.source_type === "text" && !pasteId) pasteId = item.id;
+      else if (item.source_type !== "text" && !uploadId) {
         uploadId = item.id;
         uploadLabel = item.label;
       }
     }
+
     let active: ManualSourceKind | null = null;
-    if (v.selection.mode === "manual" && v.selection.manual_input_id) {
-      if (v.selection.manual_input_id === pasteId) active = "paste";
-      else if (v.selection.manual_input_id === uploadId) active = "upload";
+    const selected = v.selected_manual;
+    if (v.selection.mode === "manual" && selected) {
+      active = selected.source_type === "text" ? "paste" : "upload";
+      if (selected.source_type === "text") {
+        pasteId = selected.id;
+        const text = String(selected.extracted_text ?? "");
+        setManualText(text);
+        lastSavedManualTextRef.current = text.trim();
+      } else {
+        uploadId = selected.id;
+        uploadLabel = selected.label;
+      }
+    } else if (pasteId) {
+      const pasteItem = v.manual_items.find((item) => item.id === pasteId);
+      const text = String(pasteItem?.extracted_text ?? "");
+      if (text) {
+        setManualText(text);
+        lastSavedManualTextRef.current = text.trim();
+      }
     }
+
     setManualSources({ pasteId, uploadId, uploadLabel });
     setDraftManualSource(active);
     setSavedManualSource(active);

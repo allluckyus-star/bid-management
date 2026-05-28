@@ -1,46 +1,66 @@
-# Chrome extension (v0.7.6)
+# Chrome extension (v0.7.9)
 
-Captures **`document.body.innerText` only** (no HTML) and POSTs to the web app:
+The extension uses a 2-layer UX:
+
+1. **Toolbar icon** → toggles the right-side **workspace panel** on the current tab (Jobright-style split view)
+2. **Options page** (right-click extension → Options): token, username, environment
+
+## Core flow
+
+Capture sends text only (no HTML) to web app:
 
 `POST {apiBaseUrl}/api/capture/job`  
-Header: `Authorization: Bearer jbhm_…`
+Header: `Authorization: Bearer jbhm_...`
 
-Identity is token-authenticated and username-validated on the server:
+Identity is enforced server-side:
 - token owner must be valid
 - username is required
-- username must match the token owner account
-- server writes `captured_by` from the validated username (never trust extension payload)
+- username must match token owner account
+- server writes `captured_by` from validated username
 
 ## Setup (once)
 
-1. Sign in to the web dashboard.
-2. In dashboard settings, register your username (one username per account).
-3. Dashboard → **Extension** → **Create capture token** (copy once).
-2. Extension **Settings** (right-click extension → Options, or popup → Settings):
-   - Paste **Capture token**
-   - Enter your registered **Username**
-   - Click **Validate username**
-   - **Test connection** — should show “Connected as …”
-4. Load unpacked from this folder in `chrome://extensions` (Reload after code changes).
+1. Sign in to web dashboard.
+2. Register your username in dashboard settings.
+3. Dashboard -> Extension -> create capture token.
+4. Extension Options:
+   - paste capture token
+   - enter username
+   - validate username
+   - test connection
+5. On a job listing page, click the extension icon to open the workspace panel.
 
-Default API: `https://bid-management-peach.vercel.app`. Developers can switch to **Localhost** in Settings only.
+Default API: `https://bid-management-peach.vercel.app`  
+Developers may switch to localhost in the workspace **Settings** tab or Options page.
 
-## Capture
+## Workspace panel
 
-- Popup → **Capture this page**
-- Right-click on a page → **Capture this page to Job Bid History**
-- Requires visible text on the page (~80+ chars enforced server-side)
-- Requires validated username in extension settings
+Click the extension icon on any normal web page (LinkedIn, Greenhouse, etc.) to open or close the panel on the right. The page content shifts left (`margin-right`) so both are visible.
 
-## Rejection rules
+Tabs (dashboard-aligned styling):
+- **JD** — latest / history / manual JD source (same APIs as dashboard JD Source page)
+- **Resume** — upload, default, remove library resumes
+- **Settings** — token, username, environment
+- **Prompt** — editable template + locked suffix preview
 
-- Missing username: rejected
-- Username not registered for token owner account: rejected
-- Username belonging to another account: rejected
-- Invalid/revoked token: rejected
+Footer quick actions:
+- Capture job
+- ChatGPT prompt
+- Download DOCX
 
-## Popup
+## Existing flows preserved
 
-- Connection status (from `GET /api/extension/me`)
-- **Open Dashboard** / **Settings**
-- No URL or `captured_by` fields on the popup
+- Context-menu capture
+- Popup capture/chatgpt/download actions
+- ChatGPT auto-send / result capture
+- Resume DOCX download and subfolder handling
+- Username/token validation
+
+## Known limitations
+
+- Workspace injection is blocked on browser internal pages (`chrome://`, `edge://`, `about:`).
+- Some sites with rigid full-width layouts may still look slightly cramped when the panel is open.
+
+## Popup (legacy)
+
+`popup.html` remains in the repo for debugging but is not wired to the toolbar icon. Use the workspace panel instead.

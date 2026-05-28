@@ -1,45 +1,27 @@
 import { NextResponse } from "next/server";
 
+import { withTeamOrExtensionRoute } from "@/lib/api/with-team-or-extension";
+import { corsHeaders, optionsResponse } from "@/lib/http/cors";
 import {
   createManualJdInput,
   getTeamJdSelectionView,
   upsertTeamJdPreference,
   type JdMode,
 } from "@/lib/resumes/jd-selection";
-import {
-  parseTeamIdFromRequest,
-  requireAuthUser,
-  requireTeamMember,
-  TeamAccessError,
-} from "@/lib/teams/access";
 
-async function resolveUser(teamId: string) {
-  await requireTeamMember(teamId);
-  const { user } = await requireAuthUser();
-  return user.id;
+export async function OPTIONS(request: Request) {
+  return optionsResponse(request);
 }
 
 export async function GET(request: Request) {
-  try {
-    const teamId = parseTeamIdFromRequest(request);
-    const userId = await resolveUser(teamId);
-    const view = await getTeamJdSelectionView(teamId, userId);
-    return NextResponse.json(view);
-  } catch (err) {
-    if (err instanceof TeamAccessError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to load JD settings" },
-      { status: 400 },
-    );
-  }
+  return withTeamOrExtensionRoute(request, async (ctx) => {
+    const view = await getTeamJdSelectionView(ctx.teamId, ctx.userId);
+    return NextResponse.json(view, { headers: corsHeaders(request) });
+  });
 }
 
 export async function PATCH(request: Request) {
-  try {
-    const teamId = parseTeamIdFromRequest(request);
-    const userId = await resolveUser(teamId);
+  return withTeamOrExtensionRoute(request, async (ctx) => {
     const body = (await request.json()) as {
       mode?: JdMode;
       history_job_id?: string | null;
@@ -47,31 +29,24 @@ export async function PATCH(request: Request) {
     };
     const mode = body.mode;
     if (mode !== "latest" && mode !== "history" && mode !== "manual") {
-      return NextResponse.json({ error: "mode must be latest, history, or manual" }, { status: 400 });
+      return NextResponse.json(
+        { error: "mode must be latest, history, or manual" },
+        { status: 400, headers: corsHeaders(request) },
+      );
     }
     await upsertTeamJdPreference({
-      teamId,
-      userId,
+      teamId: ctx.teamId,
+      userId: ctx.userId,
       mode,
       historyJobId: body.history_job_id ?? null,
       manualInputId: body.manual_input_id ?? null,
     });
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    if (err instanceof TeamAccessError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to update JD settings" },
-      { status: 400 },
-    );
-  }
+    return NextResponse.json({ ok: true }, { headers: corsHeaders(request) });
+  });
 }
 
 export async function POST(request: Request) {
-  try {
-    const teamId = parseTeamIdFromRequest(request);
-    const userId = await resolveUser(teamId);
+  return withTeamOrExtensionRoute(request, async (ctx) => {
     const contentType = request.headers.get("content-type") || "";
 
     let title = "";
@@ -90,20 +65,12 @@ export async function POST(request: Request) {
     }
 
     const item = await createManualJdInput({
-      teamId,
-      userId,
+      teamId: ctx.teamId,
+      userId: ctx.userId,
       title,
       text,
       file,
     });
-    return NextResponse.json({ item }, { status: 201 });
-  } catch (err) {
-    if (err instanceof TeamAccessError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to add manual JD" },
-      { status: 400 },
-    );
-  }
+    return NextResponse.json({ item }, { status: 201, headers: corsHeaders(request) });
+  });
 }

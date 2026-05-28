@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Job Bid Assistant Workspace</title>
+    <link rel="stylesheet" href="panel.css" />
+  </head>
+  <body>
+    <header class="panel-header">
+      <div class="panel-header-text">
+        <h1>Job Bid Assistant</h1>
+        <p id="siteMeta" class="meta">Current page</p>
+      </div>
+      <div class="header-actions">
+        <span id="connBadge" class="badge">Checking…</span>
+      </div>
+    </header>
+
+    <div id="panelStatus" class="panel-status" role="status" aria-live="polite" hidden></div>
+
+    <nav class="tabs" id="tabs" aria-label="Workspace sections"></nav>
+    <main id="tabContent" class="content"></main>
+
+    <footer class="action-bar">
+      <button id="saveCaptureBtn" type="button" class="btn-action primary">Capture job</button>
+      <button id="promptSendBtn" type="button" class="btn-action secondary">ChatGPT</button>
+      <button id="resumeDownloadBtn" type="button" class="btn-action secondary">DOCX</button>
+    </footer>
+
+    <script src="config.js"></script>
+    <script src="prompt-defaults.js"></script>
+    <script src="storage.js"></script>
+    <script src="api.js"></script>
+    <script src="panel.js"></script>
+  </body>
+</html>

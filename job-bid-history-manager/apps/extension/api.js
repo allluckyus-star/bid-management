@@ -154,6 +154,98 @@ function parseFilenameFromContentDisposition(header) {
   return plain?.[1]?.trim() || null;
 }
 
+function teamApiHeaders(token, json = true) {
+  const headers = { Authorization: `Bearer ${token}` };
+  if (json) headers["Content-Type"] = "application/json";
+  return headers;
+}
+
+function teamApiUrl(baseUrl, teamId, path) {
+  return `${baseUrl}/api/team/${teamId}${path}?teamId=${encodeURIComponent(teamId)}`;
+}
+
+async function fetchTeamJdSettings(baseUrl, token, teamId) {
+  const res = await fetch(teamApiUrl(baseUrl, teamId, "/jd-settings"), {
+    method: "GET",
+    headers: teamApiHeaders(token, false),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(parseApiErrorBody(text, res.status));
+  return text ? JSON.parse(text) : {};
+}
+
+async function patchTeamJdSettings(baseUrl, token, teamId, payload) {
+  const res = await fetch(teamApiUrl(baseUrl, teamId, "/jd-settings"), {
+    method: "PATCH",
+    headers: teamApiHeaders(token),
+    body: JSON.stringify(payload),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(parseApiErrorBody(text, res.status));
+  return text ? JSON.parse(text) : {};
+}
+
+async function postManualJdSource(baseUrl, token, teamId, { text, file, title }) {
+  const form = new FormData();
+  if (title) form.append("title", title);
+  if (text) form.append("text", text);
+  if (file) form.append("file", file);
+  const res = await fetch(teamApiUrl(baseUrl, teamId, "/jd-settings"), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  const bodyText = await res.text();
+  if (!res.ok) throw new Error(parseApiErrorBody(bodyText, res.status));
+  const json = bodyText ? JSON.parse(bodyText) : {};
+  return json.item;
+}
+
+async function fetchResumeLibrary(baseUrl, token, teamId) {
+  const res = await fetch(teamApiUrl(baseUrl, teamId, "/resume-library"), {
+    method: "GET",
+    headers: teamApiHeaders(token, false),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(parseApiErrorBody(text, res.status));
+  return text ? JSON.parse(text) : { items: [] };
+}
+
+async function uploadResumeLibrary(baseUrl, token, teamId, file, setDefault) {
+  const form = new FormData();
+  form.append("file", file);
+  if (setDefault) form.append("set_default", "1");
+  const res = await fetch(teamApiUrl(baseUrl, teamId, "/resume-library"), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(parseApiErrorBody(text, res.status));
+  return text ? JSON.parse(text) : {};
+}
+
+async function patchResumeLibraryItem(baseUrl, token, teamId, resumeId) {
+  const res = await fetch(teamApiUrl(baseUrl, teamId, `/resume-library/${resumeId}`), {
+    method: "PATCH",
+    headers: teamApiHeaders(token),
+    body: JSON.stringify({ is_default: true }),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(parseApiErrorBody(text, res.status));
+}
+
+async function deleteResumeLibraryItem(baseUrl, token, teamId, resumeId) {
+  const res = await fetch(teamApiUrl(baseUrl, teamId, `/resume-library/${resumeId}`), {
+    method: "DELETE",
+    headers: teamApiHeaders(token, false),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(parseApiErrorBody(text, res.status));
+  }
+}
+
 async function postGptResult(baseUrl, token, teamId, optimizationId, gptText) {
   const res = await fetch(
     `${baseUrl}/api/team/${teamId}/resume-optimizations/${optimizationId}/gpt-result`,

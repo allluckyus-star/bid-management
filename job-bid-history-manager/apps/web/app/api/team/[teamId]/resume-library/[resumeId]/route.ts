@@ -1,34 +1,42 @@
 import { NextResponse } from "next/server";
 
-import { withTeamRoute } from "@/lib/api/with-team-route";
+import { withTeamOrExtensionRoute } from "@/lib/api/with-team-or-extension";
+import { corsHeaders, optionsResponse } from "@/lib/http/cors";
 import { deleteLibraryResume, setDefaultLibraryResume } from "@/lib/resumes/library";
-import { requireAuthUser } from "@/lib/teams/access";
 
 type Params = { params: Promise<{ teamId: string; resumeId: string }> };
 
+export async function OPTIONS(request: Request) {
+  return optionsResponse(request);
+}
+
 export async function PATCH(request: Request, { params }: Params) {
   const { teamId: pathTeamId, resumeId } = await params;
-  return withTeamRoute(request, async (teamId) => {
-    if (teamId !== pathTeamId) {
-      return NextResponse.json({ error: "Team mismatch" }, { status: 400 });
+  return withTeamOrExtensionRoute(request, async (ctx) => {
+    if (ctx.teamId !== pathTeamId) {
+      return NextResponse.json(
+        { error: "Team mismatch" },
+        { status: 400, headers: corsHeaders(request) },
+      );
     }
-    const { user } = await requireAuthUser();
     const body = (await request.json()) as { is_default?: boolean };
     if (body.is_default) {
-      await setDefaultLibraryResume(teamId, user.id, resumeId);
+      await setDefaultLibraryResume(ctx.teamId, ctx.userId, resumeId);
     }
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true }, { headers: corsHeaders(request) });
   });
 }
 
 export async function DELETE(request: Request, { params }: Params) {
   const { teamId: pathTeamId, resumeId } = await params;
-  return withTeamRoute(request, async (teamId) => {
-    if (teamId !== pathTeamId) {
-      return NextResponse.json({ error: "Team mismatch" }, { status: 400 });
+  return withTeamOrExtensionRoute(request, async (ctx) => {
+    if (ctx.teamId !== pathTeamId) {
+      return NextResponse.json(
+        { error: "Team mismatch" },
+        { status: 400, headers: corsHeaders(request) },
+      );
     }
-    const { user } = await requireAuthUser();
-    await deleteLibraryResume(teamId, user.id, resumeId);
-    return new NextResponse(null, { status: 204 });
+    await deleteLibraryResume(ctx.teamId, ctx.userId, resumeId);
+    return new NextResponse(null, { status: 204, headers: corsHeaders(request) });
   });
 }
