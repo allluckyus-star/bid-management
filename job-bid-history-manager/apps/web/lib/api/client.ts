@@ -267,6 +267,7 @@ export async function requestJoinTeam(teamId: string): Promise<{ message: string
 
 export type TeamMembersResponse = {
   team_name: string;
+  timezone: string;
   is_owner: boolean;
   members: {
     id: string;
@@ -319,6 +320,13 @@ export async function renameTeam(teamId: string, name: string): Promise<void> {
   await request(`/api/team/${teamId}/members`, {
     method: "PATCH",
     body: JSON.stringify({ name }),
+  });
+}
+
+export async function updateTeamTimezone(teamId: string, timezone: string): Promise<void> {
+  await request(`/api/team/${teamId}/members`, {
+    method: "PATCH",
+    body: JSON.stringify({ timezone }),
   });
 }
 

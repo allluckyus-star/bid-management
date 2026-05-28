@@ -5,6 +5,7 @@ import {
   floorBucket,
   jobTimestampInRange,
 } from "@/lib/analytics/timeline-buckets";
+import { DEFAULT_TEAM_TIMEZONE, normalizeTimeZone } from "@/lib/datetime/zoned";
 
 export type TimelineJobRow = {
   captured_at: string;
@@ -25,7 +26,9 @@ export function buildTimelineFromRows(
   start?: string,
   end?: string,
   tableHighlight?: JobFilters,
+  timeZone?: string,
 ): TimelineResponse {
+  const tz = normalizeTimeZone(timeZone ?? DEFAULT_TEAM_TIMEZONE);
   const now = new Date();
   const endDt = end ? new Date(end) : now;
   const startDt = start
@@ -54,11 +57,11 @@ export function buildTimelineFromRows(
   ].sort();
 
   const slotSet = new Set<string>();
-  let cur = floorBucket(startIso, bucket);
-  const endSlot = floorBucket(endIso, bucket);
+  let cur = floorBucket(startIso, bucket, tz);
+  const endSlot = floorBucket(endIso, bucket, tz);
   while (cur <= endSlot) {
     slotSet.add(cur);
-    cur = addBucket(cur, bucket);
+    cur = addBucket(cur, bucket, tz);
   }
 
   const counts = new Map<string, number>();
@@ -67,7 +70,7 @@ export function buildTimelineFromRows(
 
   for (const job of rows) {
     const user = job.captured_by || "Unknown";
-    const slot = floorBucket(job.captured_at, bucket);
+    const slot = floorBucket(job.captured_at, bucket, tz);
     slotSet.add(slot);
     const key = `${slot}|${user}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
@@ -91,7 +94,7 @@ export function buildTimelineFromRows(
         .map(([company, count]) => ({ company, count }));
       return {
         bucket_start,
-        bucket_end: addBucket(bucket_start, bucket),
+        bucket_end: addBucket(bucket_start, bucket, tz),
         count: counts.get(key) ?? 0,
         table_count: highlight.get(key) ?? 0,
         top_companies: top,
@@ -112,6 +115,7 @@ export function buildTimelineFromRows(
 
   return {
     bucket,
+    timezone: tz,
     start: startIso,
     end: endIso,
     history_start: times[0] ?? null,

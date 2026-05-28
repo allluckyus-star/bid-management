@@ -5,7 +5,10 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatDate(iso: string): string {
+import { formatDateInTimeZone } from "@/lib/datetime/zoned";
+
+export function formatDate(iso: string, timeZone?: string): string {
+  if (timeZone) return formatDateInTimeZone(iso, timeZone);
   try {
     return new Intl.DateTimeFormat(undefined, {
       dateStyle: "medium",

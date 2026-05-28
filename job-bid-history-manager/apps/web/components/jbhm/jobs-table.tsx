@@ -51,7 +51,7 @@ import {
 } from "@/context/table-cell-edit";
 import { TableInteractionContext } from "@/context/table-interaction";
 import { useHoldKey } from "@/hooks/use-interaction-hold";
-import { useTeamId } from "@/context/team-context";
+import { useTeamId, useTeamTimezone } from "@/context/team-context";
 import { fetchJob, fetchJobJd, fetchResumePreview, patchJob } from "@/lib/api/client";
 import { notifyActionSuccess, notifyLoadError } from "@/lib/jbhm/notify";
 import {
@@ -107,6 +107,7 @@ export function JobsTable({
   interactionHeld,
 }: Props) {
   const teamId = useTeamId();
+  const teamTimezone = useTeamTimezone();
   const [filterField, setFilterField] = useState<JobFilterableField | null>(null);
   const [searchField, setSearchField] = useState<JobSortField | null>(null);
   const [jdDialog, setJdDialog] = useState<{
@@ -268,7 +269,7 @@ export function JobsTable({
       {
         accessorKey: "captured_at",
         header: () => colHeader("captured_at"),
-        cell: ({ row }) => formatDate(row.original.captured_at),
+        cell: ({ row }) => formatDate(row.original.captured_at, teamTimezone),
       },
       {
         accessorKey: "captured_by",
@@ -431,6 +432,7 @@ export function JobsTable({
       },
     ],
     [
+      teamTimezone,
       allTags,
       columnSearch,
       columnIn,

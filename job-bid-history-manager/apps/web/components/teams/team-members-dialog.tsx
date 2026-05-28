@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -20,8 +21,10 @@ import {
   rejectJoinRequest,
   removeTeamMember,
   renameTeam,
+  updateTeamTimezone,
   type TeamMembersResponse,
 } from "@/lib/api/client";
+import { TEAM_TIMEZONE_OPTIONS } from "@/lib/datetime/timezone-options";
 
 type Props = {
   teamId: string;
@@ -30,10 +33,12 @@ type Props = {
 };
 
 export function TeamMembersDialog({ teamId, open, onOpenChange }: Props) {
+  const router = useRouter();
   const [data, setData] = useState<TeamMembersResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [rename, setRename] = useState("");
+  const [timezone, setTimezone] = useState("UTC");
   const [addEmail, setAddEmail] = useState("");
 
   const load = useCallback(async () => {
@@ -42,6 +47,7 @@ export function TeamMembersDialog({ teamId, open, onOpenChange }: Props) {
       const res = await fetchTeamMembers(teamId);
       setData(res);
       setRename(res.team_name);
+      setTimezone(res.timezone);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to load members");
     } finally {
@@ -108,6 +114,20 @@ export function TeamMembersDialog({ teamId, open, onOpenChange }: Props) {
     }
   };
 
+  const handleTimezoneSave = async () => {
+    setBusy(true);
+    try {
+      await updateTeamTimezone(teamId, timezone);
+      toast.success("Team timezone updated");
+      router.refresh();
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Timezone update failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleAddMember = async () => {
     const email = addEmail.trim();
     if (!email) return;
@@ -152,10 +172,39 @@ export function TeamMembersDialog({ teamId, open, onOpenChange }: Props) {
                     Save
                   </Button>
                 </div>
+                <div className="space-y-2 pt-2 border-t">
+                  <Label htmlFor="team-timezone">Team timezone</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Table dates, chart buckets, and date filters use this timezone for everyone on
+                    the team.
+                  </p>
+                  <div className="flex gap-2">
+                    <select
+                      id="team-timezone"
+                      className="h-9 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+                      value={timezone}
+                      onChange={(e) => setTimezone(e.target.value)}
+                    >
+                      {TEAM_TIMEZONE_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label} ({opt.value})
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      size="sm"
+                      disabled={busy || timezone === data.timezone}
+                      onClick={() => void handleTimezoneSave()}
+                    >
+                      Save
+                    </Button>
+                  </div>
+                </div>
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">
                 Team: <strong>{data.team_name}</strong>
+                <span className="block text-xs">Timezone: {data.timezone}</span>
               </p>
             )}
 

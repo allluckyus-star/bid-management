@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 
 import { Button } from "@/components/ui/button";
 
+import { useTeamTimezone } from "@/context/team-context";
 import { cn } from "@/lib/utils";
 
 
@@ -52,6 +53,7 @@ export function FilterBar({
   onClear,
 
 }: Props) {
+  const teamTimezone = useTeamTimezone();
 
   const searchCount = Object.values(filters.column_search ?? {}).filter((v) => v?.trim()).length;
   const inCount = Object.values(filters.column_in ?? {}).filter((v) => v?.length).length;
@@ -93,8 +95,7 @@ export function FilterBar({
 
         In the table header: <strong>filter</strong> (checkbox values), <strong>sort</strong>{" "}
         (click: ascending → descending → off), and <strong>search</strong> (text). Tag and date
-        filters below apply
-        to the whole table.
+        filters below apply to the whole table. Dates use team timezone ({teamTimezone}).
 
       </p>
 
@@ -154,7 +155,7 @@ export function FilterBar({
 
               onChange({
 
-                date_from: e.target.value ? `${e.target.value}T00:00:00.000Z` : undefined,
+                date_from: e.target.value || undefined,
 
               });
 
@@ -182,7 +183,7 @@ export function FilterBar({
 
               onChange({
 
-                date_to: e.target.value ? `${e.target.value}T23:59:59.999Z` : undefined,
+                date_to: e.target.value || undefined,
 
               });
 

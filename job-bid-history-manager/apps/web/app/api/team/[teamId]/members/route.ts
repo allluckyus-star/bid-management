@@ -10,6 +10,7 @@ import {
   insertTeamMember,
   markPendingJoinRequestsApproved,
 } from "@/lib/teams/add-member";
+import { normalizeTimeZone } from "@/lib/datetime/zoned";
 import { createAdminClient, hasServiceRoleKey } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -62,12 +63,13 @@ export async function GET(_request: Request, { params }: Params) {
 
     const { data: team } = await supabase
       .from("teams")
-      .select("name, owner_user_id")
+      .select("name, owner_user_id, timezone")
       .eq("id", teamId)
       .single();
 
     return NextResponse.json({
       team_name: team?.name ?? "",
+      timezone: normalizeTimeZone(team?.timezone),
       is_owner: membership.role === "owner",
       members: (members ?? []).map((m) => {
         const p = profileById.get(m.user_id);
@@ -147,24 +149,32 @@ export async function PATCH(request: Request, { params }: Params) {
   try {
     const { teamId } = await params;
     await requireTeamOwner(teamId);
-    const body = (await request.json()) as { name?: string };
+    const body = (await request.json()) as { name?: string; timezone?: string };
     const name = (body.name ?? "").trim();
-    if (!name) {
-      return NextResponse.json({ error: "name required" }, { status: 400 });
+    const timezoneRaw = body.timezone?.trim();
+
+    if (!name && !timezoneRaw) {
+      return NextResponse.json({ error: "name or timezone required" }, { status: 400 });
     }
+
+    const patch: { name?: string; timezone?: string } = {};
+    if (name) patch.name = name.slice(0, 120);
+    if (timezoneRaw) patch.timezone = normalizeTimeZone(timezoneRaw);
 
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("teams")
-      .update({ name: name.slice(0, 120) })
+      .update(patch)
       .eq("id", teamId)
-      .select("id, name")
+      .select("id, name, timezone")
       .single();
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    return NextResponse.json({ team: data });
+    return NextResponse.json({
+      team: { ...data, timezone: normalizeTimeZone(data.timezone) },
+    });
   } catch (err) {
     const res = teamAccessToResponse(err);
     if (res) return res;

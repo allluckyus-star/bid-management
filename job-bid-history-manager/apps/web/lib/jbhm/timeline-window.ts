@@ -1,5 +1,14 @@
 import type { TimelineBucketKey } from "@jbhm/shared";
 
+import {
+  addZonedMonths,
+  DEFAULT_TEAM_TIMEZONE,
+  endOfZonedMonthMs,
+  normalizeTimeZone,
+  startOfZonedDayMs,
+  startOfZonedMonthMs,
+} from "@/lib/datetime/zoned";
+
 const DAY_MS = 86400000;
 
 /** Visible range width + pan step per bucket (client-driven; not the old 14-day-only history cap). */
@@ -29,14 +38,33 @@ const PAST_PAD_MS: Record<TimelineBucketKey, number> = {
   "1month": 0,
 };
 
+export function floorBucketMs(
+  ms: number,
+  bucket: TimelineBucketKey,
+  timeZone: string = DEFAULT_TEAM_TIMEZONE,
+): number {
+  const tz = normalizeTimeZone(timeZone);
+  if (bucket === "1month") return startOfZonedMonthMs(ms, tz);
+  if (bucket === "1d") return startOfZonedDayMs(ms, tz);
+  if (bucket === "30m") {
+    return Math.floor(ms / (30 * 60 * 1000)) * (30 * 60 * 1000);
+  }
+  if (bucket === "5m") {
+    return Math.floor(ms / (5 * 60 * 1000)) * (5 * 60 * 1000);
+  }
+  return Math.floor(ms / 3600000) * 3600000;
+}
+
 /** Latest allowed end timestamp for the loaded timeline window. */
 export function maxFutureEndMs(
   bucket: TimelineBucketKey,
   nowMs: number = Date.now(),
+  timeZone: string = DEFAULT_TEAM_TIMEZONE,
 ): number {
+  const tz = normalizeTimeZone(timeZone);
   if (bucket === "1month") {
-    const cur = floorBucketMs(nowMs, bucket);
-    return endOfUtcMonth(addUtcMonths(cur, 1));
+    const cur = floorBucketMs(nowMs, bucket, tz);
+    return endOfZonedMonthMs(addZonedMonths(cur, 1, tz), tz);
   }
   return nowMs + FUTURE_PAD_MS[bucket];
 }
@@ -48,50 +76,23 @@ export type HistoryBounds = { minMs: number | null; maxMs: number | null };
 
 export type TimeRange = { start: string; end: string };
 
-export function floorBucketMs(ms: number, bucket: TimelineBucketKey): number {
-  const d = new Date(ms);
-  if (bucket === "1month") {
-    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
-  }
-  if (bucket === "1d") {
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
-  }
-  if (bucket === "30m") {
-    return Math.floor(ms / (30 * 60 * 1000)) * (30 * 60 * 1000);
-  }
-  if (bucket === "5m") {
-    return Math.floor(ms / (5 * 60 * 1000)) * (5 * 60 * 1000);
-  }
-  return Math.floor(ms / 3600000) * 3600000;
-}
-
-export function addUtcMonths(ms: number, months: number): number {
-  const d = new Date(ms);
-  const m = d.getUTCMonth() + months;
-  const y = d.getUTCFullYear() + Math.floor(m / 12);
-  return Date.UTC(y, ((m % 12) + 12) % 12, 1);
-}
-
-function endOfUtcMonth(monthStartMs: number): number {
-  const d = new Date(monthStartMs);
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0, 23, 59, 59, 999);
-}
-
 function clampRange(
   startMs: number,
   endMs: number,
   bounds: HistoryBounds,
   bucket: TimelineBucketKey,
+  timeZone: string,
 ): { startMs: number; endMs: number } {
+  const tz = normalizeTimeZone(timeZone);
   const width = Math.max(endMs - startMs, DAY_MS);
   let s = startMs;
   let e = endMs;
 
   if (bounds.minMs != null && s < bounds.minMs) {
-    s = floorBucketMs(bounds.minMs, bucket);
+    s = floorBucketMs(bounds.minMs, bucket, tz);
     e = s + width;
   }
-  const futureCap = maxFutureEndMs(bucket);
+  const futureCap = maxFutureEndMs(bucket, Date.now(), tz);
   if (e > futureCap) {
     e = futureCap;
     s = Math.max(bounds.minMs ?? s, e - width);
@@ -109,62 +110,62 @@ function toRange(startMs: number, endMs: number): TimeRange {
   return { start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString() };
 }
 
-/**
- * Loaded window that includes all stored bids (with padding), not only “last N days from now”.
- * Panning at the edges still shifts this window in fixed steps.
- */
 export function dataAwareInitialRange(
   bucket: TimelineBucketKey,
   bounds: HistoryBounds,
+  timeZone: string = DEFAULT_TEAM_TIMEZONE,
 ): TimeRange {
+  const tz = normalizeTimeZone(timeZone);
   if (bounds.minMs == null || bounds.maxMs == null) {
-    return initialRange(bucket, bounds);
+    return initialRange(bucket, bounds, tz);
   }
 
   const now = Date.now();
   const dataEnd = Math.max(bounds.maxMs, now);
 
   if (bucket === "1month") {
-    const startMs = addUtcMonths(floorBucketMs(bounds.minMs, bucket), -1);
-    const endMs = endOfUtcMonth(addUtcMonths(floorBucketMs(dataEnd, bucket), 1));
-    const c = clampRange(startMs, endMs, bounds, bucket);
+    const startMs = addZonedMonths(floorBucketMs(bounds.minMs, bucket, tz), -1, tz);
+    const endMs = endOfZonedMonthMs(addZonedMonths(floorBucketMs(dataEnd, bucket, tz), 1, tz), tz);
+    const c = clampRange(startMs, endMs, bounds, bucket, tz);
     return toRange(c.startMs, c.endMs);
   }
 
   const padBefore = bucket === "1d" ? 3 * DAY_MS : DAY_MS;
-  const startMs = floorBucketMs(bounds.minMs, bucket) - padBefore;
-  const endMs = maxFutureEndMs(bucket, dataEnd + DAY_MS);
-  const c = clampRange(startMs, endMs, bounds, bucket);
+  const startMs = floorBucketMs(bounds.minMs, bucket, tz) - padBefore;
+  const endMs = maxFutureEndMs(bucket, dataEnd + DAY_MS, tz);
+  const c = clampRange(startMs, endMs, bounds, bucket, tz);
   return toRange(c.startMs, c.endMs);
 }
 
-/** First load: past window through now + bucket-specific future pad (empty buckets allowed). */
-export function initialRange(bucket: TimelineBucketKey, bounds: HistoryBounds = { minMs: null, maxMs: null }): TimeRange {
+export function initialRange(
+  bucket: TimelineBucketKey,
+  bounds: HistoryBounds = { minMs: null, maxMs: null },
+  timeZone: string = DEFAULT_TEAM_TIMEZONE,
+): TimeRange {
+  const tz = normalizeTimeZone(timeZone);
   const now = Date.now();
   if (bucket === "1month") {
     const { initialHalfMonths } = VIEW_WINDOW["1month"];
-    const cur = floorBucketMs(now, bucket);
-    const startMs = addUtcMonths(cur, -initialHalfMonths);
-    const endMs = endOfUtcMonth(addUtcMonths(cur, 1));
-    const c = clampRange(startMs, endMs, bounds, bucket);
+    const cur = floorBucketMs(now, bucket, tz);
+    const startMs = addZonedMonths(cur, -initialHalfMonths, tz);
+    const endMs = endOfZonedMonthMs(addZonedMonths(cur, 1, tz), tz);
+    const c = clampRange(startMs, endMs, bounds, bucket, tz);
     return toRange(c.startMs, c.endMs);
   }
   const startMs = now - PAST_PAD_MS[bucket];
-  const endMs = maxFutureEndMs(bucket, now);
-  const c = clampRange(startMs, endMs, bounds, bucket);
+  const endMs = maxFutureEndMs(bucket, now, tz);
+  const c = clampRange(startMs, endMs, bounds, bucket, tz);
   return toRange(c.startMs, c.endMs);
 }
 
-/**
- * Shift the whole window by one step; width unchanged.
- * e.g. (x, y) → (x−3d, y−3d) on left edge; slider is moved so the chart view stays the same.
- */
 export function shiftLoadedRange(
   current: TimeRange,
   direction: "older" | "newer",
   bucket: TimelineBucketKey,
   bounds: HistoryBounds = { minMs: null, maxMs: null },
+  timeZone: string = DEFAULT_TEAM_TIMEZONE,
 ): TimeRange {
+  const tz = normalizeTimeZone(timeZone);
   const startMs = new Date(current.start).getTime();
   const endMs = new Date(current.end).getTime();
   const width = endMs - startMs;
@@ -172,9 +173,12 @@ export function shiftLoadedRange(
 
   if (bucket === "1month") {
     const step = VIEW_WINDOW["1month"].panStepMonths;
-    const newStart = addUtcMonths(floorBucketMs(startMs, bucket), sign * step);
-    const newEnd = endOfUtcMonth(addUtcMonths(floorBucketMs(endMs, bucket), sign * step));
-    const c = clampRange(newStart, newEnd, bounds, bucket);
+    const newStart = addZonedMonths(floorBucketMs(startMs, bucket, tz), sign * step, tz);
+    const newEnd = endOfZonedMonthMs(
+      addZonedMonths(floorBucketMs(endMs, bucket, tz), sign * step, tz),
+      tz,
+    );
+    const c = clampRange(newStart, newEnd, bounds, bucket, tz);
     return toRange(c.startMs, c.endMs);
   }
 
@@ -183,10 +187,10 @@ export function shiftLoadedRange(
   let newEndMs = endMs + deltaMs;
 
   if (bounds.minMs != null && newStartMs < bounds.minMs) {
-    newStartMs = floorBucketMs(bounds.minMs, bucket);
+    newStartMs = floorBucketMs(bounds.minMs, bucket, tz);
     newEndMs = newStartMs + width;
   }
-  const futureCap = maxFutureEndMs(bucket);
+  const futureCap = maxFutureEndMs(bucket, Date.now(), tz);
   if (newEndMs > futureCap) {
     newEndMs = futureCap;
     newStartMs = Math.max(bounds.minMs ?? newStartMs, newEndMs - width);
@@ -205,25 +209,39 @@ export function parseHistoryBounds(
   };
 }
 
-export function canPanOlder(loadedStartIso: string, bounds: HistoryBounds, bucket: TimelineBucketKey): boolean {
+export function canPanOlder(
+  loadedStartIso: string,
+  bounds: HistoryBounds,
+  bucket: TimelineBucketKey,
+  timeZone: string = DEFAULT_TEAM_TIMEZONE,
+): boolean {
+  const tz = normalizeTimeZone(timeZone);
   if (bounds.minMs == null) return false;
-  return floorBucketMs(new Date(loadedStartIso).getTime(), bucket) > bounds.minMs + 1000;
+  return floorBucketMs(new Date(loadedStartIso).getTime(), bucket, tz) > bounds.minMs + 1000;
 }
 
-export function canPanNewer(loadedEndIso: string, bounds: HistoryBounds, bucket: TimelineBucketKey): boolean {
+export function canPanNewer(
+  loadedEndIso: string,
+  bounds: HistoryBounds,
+  bucket: TimelineBucketKey,
+  timeZone: string = DEFAULT_TEAM_TIMEZONE,
+): boolean {
+  const tz = normalizeTimeZone(timeZone);
   const endMs = new Date(loadedEndIso).getTime();
-  if (endMs >= maxFutureEndMs(bucket) - 1000) return false;
+  if (endMs >= maxFutureEndMs(bucket, Date.now(), tz) - 1000) return false;
   if (bounds.maxMs == null) return false;
   if (bucket === "1month") {
-    return endMs < endOfUtcMonth(floorBucketMs(bounds.maxMs, bucket));
+    return endMs < endOfZonedMonthMs(floorBucketMs(bounds.maxMs, bucket, tz), tz);
   }
   return endMs < bounds.maxMs + (bucket === "1d" ? DAY_MS : 3600000);
 }
 
 export type ZoomRange = { start: number; end: number };
 
-/** Absolute time span currently shown on the chart (from slider %). */
-export function visibleAbsoluteRange(loaded: TimeRange, zoom: ZoomRange): { startMs: number; endMs: number } {
+export function visibleAbsoluteRange(
+  loaded: TimeRange,
+  zoom: ZoomRange,
+): { startMs: number; endMs: number } {
   const startMs = new Date(loaded.start).getTime();
   const endMs = new Date(loaded.end).getTime();
   const span = Math.max(endMs - startMs, 1);
@@ -233,9 +251,6 @@ export function visibleAbsoluteRange(loaded: TimeRange, zoom: ZoomRange): { star
   };
 }
 
-/**
- * After (x,y)→(x−3d,y−3d), move the slider so the same bucket columns stay in view.
- */
 export function zoomPreservingVisibleRange(
   _newLoaded: TimeRange,
   categories: string[],

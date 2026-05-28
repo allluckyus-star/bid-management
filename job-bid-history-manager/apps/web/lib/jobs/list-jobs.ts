@@ -1,7 +1,9 @@
 import type { JobFilters, JobListItem, JobListResponse, Tag } from "@jbhm/shared";
 
+import { applyTeamDateFilters } from "@/lib/jobs/date-filters";
 import { parseJobFiltersFromSearchParams } from "@/lib/jobs/query-params";
 import { createClient } from "@/lib/supabase/server";
+import { getTeamTimezone } from "@/lib/teams/team-timezone";
 
 type JobRow = {
   id: string;
@@ -98,6 +100,8 @@ export async function listJobsFromFilters(
   const to = from + pageSize - 1;
 
   const supabase = await createClient();
+  const timeZone = await getTeamTimezone(supabase, teamId);
+  const resolvedFilters = applyTeamDateFilters(filters, timeZone);
 
   let jobIdFilter: string[] | null = null;
 
@@ -149,12 +153,12 @@ export async function listJobsFromFilters(
     .eq("team_id", teamId);
 
   if (jobIdFilter) query = query.in("id", jobIdFilter);
-  if (filters.captured_by) query = query.eq("captured_by", filters.captured_by);
-  if (filters.date_from) query = query.gte("captured_at", filters.date_from);
-  if (filters.date_to) query = query.lte("captured_at", filters.date_to);
+  if (resolvedFilters.captured_by) query = query.eq("captured_by", resolvedFilters.captured_by);
+  if (resolvedFilters.date_from) query = query.gte("captured_at", resolvedFilters.date_from);
+  if (resolvedFilters.date_to) query = query.lte("captured_at", resolvedFilters.date_to);
 
-  if (filters.q?.trim()) {
-    const q = escapeIlike(filters.q.trim());
+  if (resolvedFilters.q?.trim()) {
+    const q = escapeIlike(resolvedFilters.q.trim());
     query = query.or(
       `company_name.ilike.%${q}%,job_title.ilike.%${q}%,location.ilike.%${q}%,salary_text.ilike.%${q}%,captured_by.ilike.%${q}%`,
     );

@@ -1,13 +1,15 @@
 import type { DashboardSummary } from "@jbhm/shared";
 
+import { endOfZonedDayMs, startOfZonedDayMs } from "@/lib/datetime/zoned";
 import { createClient } from "@/lib/supabase/server";
+import { getTeamTimezone } from "@/lib/teams/team-timezone";
 
 export async function fetchDashboardSummary(teamId: string): Promise<DashboardSummary> {
   const supabase = await createClient();
-  const now = new Date();
-  const startOfDay = new Date(now);
-  startOfDay.setHours(0, 0, 0, 0);
-  const weekAgo = new Date(now.getTime() - 7 * 86400000);
+  const timeZone = await getTeamTimezone(supabase, teamId);
+  const now = Date.now();
+  const startOfDay = startOfZonedDayMs(now, timeZone);
+  const weekAgo = now - 7 * 86400000;
 
   const base = () =>
     supabase
@@ -23,14 +25,15 @@ export async function fetchDashboardSummary(teamId: string): Promise<DashboardSu
     .select("id", { count: "exact", head: true })
     .eq("team_id", teamId)
     .is("deleted_at", null)
-    .gte("captured_at", startOfDay.toISOString());
+    .gte("captured_at", new Date(startOfDay).toISOString())
+    .lte("captured_at", new Date(endOfZonedDayMs(now, timeZone)).toISOString());
 
   const { count: week } = await supabase
     .from("jobs")
     .select("id", { count: "exact", head: true })
     .eq("team_id", teamId)
     .is("deleted_at", null)
-    .gte("captured_at", weekAgo.toISOString());
+    .gte("captured_at", new Date(weekAgo).toISOString());
 
   const { data: topRow } = await supabase
     .from("jobs")

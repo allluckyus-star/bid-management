@@ -17,7 +17,14 @@ describe("buildTimelineFromRows", () => {
   ];
 
   it("counts both users in hour buckets inside the loaded window", () => {
-    const out = buildTimelineFromRows(rows, "1h", "2026-05-20T00:00:00.000Z", "2026-05-25T23:59:59.999Z");
+    const out = buildTimelineFromRows(
+      rows,
+      "1h",
+      "2026-05-20T00:00:00.000Z",
+      "2026-05-25T23:59:59.999Z",
+      undefined,
+      "UTC",
+    );
     const ethan = out.series.find((s) => s.captured_by === "ethan");
     const ally = out.series.find((s) => s.captured_by === "allluckyus");
     expect(ethan).toBeDefined();
@@ -27,7 +34,14 @@ describe("buildTimelineFromRows", () => {
   });
 
   it("counts both users on day buckets", () => {
-    const out = buildTimelineFromRows(rows, "1d", "2026-05-20T00:00:00.000Z", "2026-05-25T23:59:59.999Z");
+    const out = buildTimelineFromRows(
+      rows,
+      "1d",
+      "2026-05-20T00:00:00.000Z",
+      "2026-05-25T23:59:59.999Z",
+      undefined,
+      "UTC",
+    );
     const ethanDay = out.series
       .find((s) => s.captured_by === "ethan")
       ?.buckets.find((b) => b.count > 0);

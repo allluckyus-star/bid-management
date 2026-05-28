@@ -28,6 +28,7 @@ import {
 } from "@/lib/api/client";
 import { cycleColumnSort, isFilterableField, isOrderableField } from "@/lib/jbhm/column-controls";
 import { notifyActionSuccess, notifyLoadError } from "@/lib/jbhm/notify";
+import { useTeamTimezone } from "@/context/team-context";
 import { formatDate } from "@/lib/utils";
 
 type Mode = "latest" | "history" | "manual";
@@ -41,6 +42,7 @@ const emptySelection = (): TeamJdSelectionView["selection"] => ({
 });
 
 export function TeamJdPage({ teamId }: { teamId: string }) {
+  const teamTimezone = useTeamTimezone();
   const [view, setView] = useState<TeamJdSelectionView | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -597,7 +599,7 @@ export function TeamJdPage({ teamId }: { teamId: string }) {
                                     void openJd(row);
                                   }}
                                 >
-                                  View JD ({formatDate(row.captured_at)})
+                                  View JD ({formatDate(row.captured_at, teamTimezone)})
                                 </button>
                               ) : (
                                 <span className="text-muted-foreground">No JD</span>

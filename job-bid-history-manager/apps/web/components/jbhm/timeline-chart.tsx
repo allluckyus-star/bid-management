@@ -23,7 +23,24 @@ import {
   type HistoryBounds,
   type ZoomRange,
 } from "@/lib/jbhm/timeline-window";
+import {
+  bucketAxisLabel,
+  dayBoundsFromBucketKey,
+  formatBucketRange,
+} from "@/lib/datetime/chart-format";
+import {
+  DEFAULT_TEAM_TIMEZONE,
+  endOfZonedMonthMs,
+  getZonedParts,
+  normalizeTimeZone,
+} from "@/lib/datetime/zoned";
 import { cn } from "@/lib/utils";
+
+let chartTimeZone = DEFAULT_TEAM_TIMEZONE;
+
+function setChartTimeZone(tz: string) {
+  chartTimeZone = normalizeTimeZone(tz);
+}
 
 const BUCKETS: { key: TimelineBucketKey; label: string }[] = [
   { key: "1h", label: "Hour" },
@@ -266,37 +283,11 @@ function applyWheelPan(zoom: ZoomRange, deltaY: number, maxSpan: number): ZoomRa
   return { start: newStart, end: newEnd };
 }
 
-function parseLocalYmd(iso: string): { year: number; month: number; day: number } | null {
-  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!m) return null;
-  return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
-}
-
-/** One local calendar day: 00:00:00.000 – 23:59:59.999 (matches API 1d buckets). */
-function localCalendarDayBounds(startIso: string): { startMs: number; endMs: number } {
-  const p = parseLocalYmd(startIso);
-  if (p) {
-    return {
-      startMs: new Date(p.year, p.month - 1, p.day, 0, 0, 0, 0).getTime(),
-      endMs: new Date(p.year, p.month - 1, p.day, 23, 59, 59, 999).getTime(),
-    };
-  }
-  const anchor = new Date(startIso);
-  const y = anchor.getFullYear();
-  const mo = anchor.getMonth();
-  const d = anchor.getDate();
-  return {
-    startMs: new Date(y, mo, d, 0, 0, 0, 0).getTime(),
-    endMs: new Date(y, mo, d, 23, 59, 59, 999).getTime(),
-  };
-}
-
 function bucketEndMs(startIso: string, bucketKey: TimelineBucketKey): number {
-  const p = parseUtcYearMonth(startIso);
-  if (bucketKey === "1month" && p) {
-    return Date.UTC(p.year, p.month, 0, 23, 59, 59, 999);
+  if (bucketKey === "1month") {
+    return endOfZonedMonthMs(new Date(startIso).getTime(), chartTimeZone);
   }
-  if (bucketKey === "1d") return localCalendarDayBounds(startIso).endMs;
+  if (bucketKey === "1d") return dayBoundsFromBucketKey(startIso, chartTimeZone).endMs;
   const start = new Date(startIso).getTime();
   if (bucketKey === "30m") return start + 30 * 60 * 1000 - 1;
   if (bucketKey === "5m") return start + 5 * 60 * 1000 - 1;
@@ -304,21 +295,17 @@ function bucketEndMs(startIso: string, bucketKey: TimelineBucketKey): number {
 }
 
 function bucketStartMs(startIso: string, bucketKey: TimelineBucketKey): number {
-  if (bucketKey === "1d") return localCalendarDayBounds(startIso).startMs;
+  if (bucketKey === "1d") return dayBoundsFromBucketKey(startIso, chartTimeZone).startMs;
   return new Date(startIso).getTime();
 }
 
-/** UTC year-month key — matches API month buckets (strftime %Y-%m-01 UTC). */
-function utcYearMonthKey(ms: number): string {
-  const d = new Date(ms);
-  const month = String(d.getUTCMonth() + 1).padStart(2, "0");
-  return `${d.getUTCFullYear()}-${month}`;
+function zonedYearMonthKey(ms: number): string {
+  const p = getZonedParts(ms, chartTimeZone);
+  return `${p.year}-${String(p.month).padStart(2, "0")}`;
 }
 
-function monthBucketUtcKey(bucketStartIso: string): string | null {
-  const p = parseUtcYearMonth(bucketStartIso);
-  if (!p) return null;
-  return `${p.year}-${String(p.month).padStart(2, "0")}`;
+function monthBucketKey(bucketStartIso: string): string {
+  return zonedYearMonthKey(new Date(bucketStartIso).getTime());
 }
 
 /** Index of the bucket that contains the current time, or -1 if not in loaded range. */
@@ -328,14 +315,14 @@ function findNowBucketIndex(categories: string[], bucketKey: TimelineBucketKey):
 
   if (bucketKey === "1d") {
     return categories.findIndex((iso) => {
-      const { startMs, endMs } = localCalendarDayBounds(iso);
+      const { startMs, endMs } = dayBoundsFromBucketKey(iso, chartTimeZone);
       return now >= startMs && now <= endMs;
     });
   }
 
   if (bucketKey === "1month") {
-    const thisMonth = utcYearMonthKey(now);
-    return categories.findIndex((iso) => monthBucketUtcKey(iso) === thisMonth);
+    const thisMonth = zonedYearMonthKey(now);
+    return categories.findIndex((iso) => monthBucketKey(iso) === thisMonth);
   }
 
   for (let i = 0; i < categories.length; i++) {
@@ -355,7 +342,7 @@ function findNearestBucketIndex(categories: string[], bucketKey: TimelineBucketK
   for (let i = 0; i < categories.length; i++) {
     const { startMs, endMs } =
       bucketKey === "1d"
-        ? localCalendarDayBounds(categories[i])
+        ? dayBoundsFromBucketKey(categories[i], chartTimeZone)
         : { startMs: new Date(categories[i]).getTime(), endMs: bucketEndMs(categories[i], bucketKey) };
     const dist = Math.min(Math.abs(now - startMs), Math.abs(now - endMs));
     if (dist < bestDist) {
@@ -433,78 +420,6 @@ function initialZoomAroundNow(categories: string[], bucketKey: TimelineBucketKey
     start: (startIdx / n) * 100,
     end: (endIdx / n) * 100,
   };
-}
-
-function parseUtcYearMonth(iso: string): { year: number; month: number } | null {
-  const m = iso.match(/^(\d{4})-(\d{2})/);
-  if (!m) return null;
-  return { year: Number(m[1]), month: Number(m[2]) };
-}
-
-/** Calendar month from bucket_start (UTC): Apr 1 – Apr 30 */
-function formatMonthBucketRange(bucketStartIso: string): string {
-  const p = parseUtcYearMonth(bucketStartIso);
-  if (!p) return bucketStartIso;
-  const start = new Date(Date.UTC(p.year, p.month - 1, 1));
-  const end = new Date(Date.UTC(p.year, p.month, 0));
-  const fmt = (d: Date) =>
-    d.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      timeZone: "UTC",
-    });
-  return `${fmt(start)} – ${fmt(end)}`;
-}
-
-function formatMonthAxisLabel(bucketStartIso: string): string {
-  const p = parseUtcYearMonth(bucketStartIso);
-  if (!p) return bucketStartIso;
-  return new Date(Date.UTC(p.year, p.month - 1, 1)).toLocaleDateString("en-US", {
-    month: "short",
-    timeZone: "UTC",
-  });
-}
-
-function formatDayBucketRange(bucketStartIso: string): string {
-  const { startMs, endMs } = localCalendarDayBounds(bucketStartIso);
-  const fmt = (ms: number) =>
-    new Date(ms).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  return `${fmt(startMs)} 00:00 – ${fmt(endMs)} 23:59`;
-}
-
-function formatBucketRange(startIso: string, endIso: string, bucket: TimelineBucketKey): string {
-  if (bucket === "1month") {
-    return formatMonthBucketRange(startIso);
-  }
-  if (bucket === "1d") {
-    return formatDayBucketRange(startIso);
-  }
-  const s = new Date(startIso);
-  const e = new Date(endIso);
-  return `${s.toLocaleString()} – ${e.toLocaleString()}`;
-}
-
-function bucketAxisLabel(iso: string, bucket: TimelineBucketKey): string {
-  if (bucket === "1month") {
-    return formatMonthAxisLabel(iso);
-  }
-  const d = new Date(iso);
-  if (bucket === "1d") {
-    const p = parseLocalYmd(iso);
-    if (!p) return iso;
-    return new Date(p.year, p.month - 1, p.day).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    });
-  }
-  const datePart = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  const timePart = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  return `${datePart}\n${timePart}`;
 }
 
 function visibleBucketWindow(total: number, zoom: { start: number; end: number }) {
@@ -610,7 +525,7 @@ function createStableAxisLabelConfig(bucketKey: TimelineBucketKey) {
     showMaxLabel: true,
     rotate,
     fontSize: 10,
-    formatter: (value: string) => bucketAxisLabel(String(value), bucketKey),
+    formatter: (value: string) => bucketAxisLabel(String(value), bucketKey, chartTimeZone),
   };
 }
 
@@ -634,7 +549,7 @@ function formatBucketTooltip(
   const first = items[0]?.data;
   const timeLine =
     first?.bucket_start && first?.bucket_end
-      ? formatBucketRange(first.bucket_start, first.bucket_end, bucket)
+      ? formatBucketRange(first.bucket_start, first.bucket_end, bucket, chartTimeZone)
       : "";
 
   type UserBucket = {
@@ -700,6 +615,7 @@ function filledBarStyle(color: string): BarItemStyle {
 
 export type TimelineChartProps = {
   dark?: boolean;
+  timeZone: string;
   bucket: TimelineBucketKey;
   data: TimelineResponse | null;
   loading: boolean;
@@ -717,6 +633,7 @@ export type TimelineChartProps = {
 
 export function TimelineChart({
   dark = false,
+  timeZone,
   bucket,
   data,
   loading,
@@ -724,6 +641,8 @@ export function TimelineChart({
   onRetry,
   onRequestRange,
 }: TimelineChartProps) {
+  setChartTimeZone(data?.timezone ?? timeZone);
+  const tz = chartTimeZone;
   const [pinnedZoom, setPinnedZoom] = useState<ZoomRange | null>(null);
   const [labelRefresh, setLabelRefresh] = useState(0);
   const chartRef = useRef<{ getEchartsInstance: () => EChartsType } | null>(null);
@@ -825,8 +744,8 @@ export function TimelineChart({
     const bounds = parseHistoryBounds(data.history_start, data.history_end);
     historyBoundsRef.current = bounds;
     pendingResetRef.current = true;
-    onRequestRange(bucket, dataAwareInitialRange(bucket, bounds), { resetView: true });
-  }, [data, bucket, onRequestRange]);
+    onRequestRange(bucket, dataAwareInitialRange(bucket, bounds, tz), { resetView: true });
+  }, [data, bucket, onRequestRange, tz]);
 
   useEffect(() => {
     setPinnedZoom(null);
@@ -1058,8 +977,8 @@ export function TimelineChart({
       if (!d?.series.length || isPanShiftRef.current) return;
 
       const bounds = historyBoundsRef.current;
-      if (direction === "older" && !canPanOlder(d.start, bounds, b)) return;
-      if (direction === "newer" && !canPanNewer(d.end, bounds, b)) return;
+      if (direction === "older" && !canPanOlder(d.start, bounds, b, tz)) return;
+      if (direction === "newer" && !canPanNewer(d.end, bounds, b, tz)) return;
 
       const preserveVisible = visibleAbsoluteRange(
         { start: d.start, end: d.end },
@@ -1072,11 +991,12 @@ export function TimelineChart({
         direction,
         b,
         bounds,
+        tz,
       );
 
       onRequestRange(b, range, { preserveVisible });
     },
-    [onRequestRange],
+    [onRequestRange, tz],
   );
 
   useEffect(() => {
@@ -1120,9 +1040,9 @@ export function TimelineChart({
           return;
         }
 
-        if (zoom.start <= EDGE_PAN_THRESHOLD_PCT && canPanOlder(d.start, bounds, b)) {
+        if (zoom.start <= EDGE_PAN_THRESHOLD_PCT && canPanOlder(d.start, bounds, b, tz)) {
           pendingEdgeRef.current = "older";
-        } else if (zoom.end >= 100 - EDGE_PAN_THRESHOLD_PCT && canPanNewer(d.end, bounds, b)) {
+        } else if (zoom.end >= 100 - EDGE_PAN_THRESHOLD_PCT && canPanNewer(d.end, bounds, b, tz)) {
           pendingEdgeRef.current = "newer";
         }
       },
@@ -1149,6 +1069,7 @@ export function TimelineChart({
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold">Bid timeline</h3>
+          <p className="text-[10px] text-muted-foreground">{tz}</p>
         </div>
         <div className="flex flex-wrap gap-1">
           {BUCKETS.map((b) => (
@@ -1162,7 +1083,7 @@ export function TimelineChart({
                 pendingResetRef.current = true;
                 onRequestRange(
                   b.key,
-                  dataAwareInitialRange(b.key, historyBoundsRef.current),
+                  dataAwareInitialRange(b.key, historyBoundsRef.current, tz),
                   { resetView: true },
                 );
               }}

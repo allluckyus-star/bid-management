@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { buildTimelineFromRows, type TimelineJobRow } from "@/lib/analytics/build-timeline";
 import { createClient } from "@/lib/supabase/server";
+import { getTeamTimezone } from "@/lib/teams/team-timezone";
 
 const TIMELINE_PAGE_SIZE = 1000;
 
@@ -41,6 +42,9 @@ export async function buildTimeline(
   tableHighlight?: JobFilters,
 ): Promise<TimelineResponse> {
   const supabase = await createClient();
-  const jobs = await fetchAllJobsForTimeline(supabase, teamId);
-  return buildTimelineFromRows(jobs, bucket, start, end, tableHighlight);
+  const [jobs, timeZone] = await Promise.all([
+    fetchAllJobsForTimeline(supabase, teamId),
+    getTeamTimezone(supabase, teamId),
+  ]);
+  return buildTimelineFromRows(jobs, bucket, start, end, tableHighlight, timeZone);
 }

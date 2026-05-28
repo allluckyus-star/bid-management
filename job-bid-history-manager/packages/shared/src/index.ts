@@ -209,6 +209,8 @@ export type TimelineSeries = {
 
 export type TimelineResponse = {
   bucket: string;
+  /** IANA timezone used for bucketing and labels (team setting). */
+  timezone?: string;
   start: string;
   end: string;
   /** Earliest job timestamp (pan limit) */

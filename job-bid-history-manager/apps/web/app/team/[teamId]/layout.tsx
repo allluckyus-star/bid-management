@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { TeamLayoutProvider } from "@/components/teams/team-layout-provider";
+import { normalizeTimeZone } from "@/lib/datetime/zoned";
 import { QueryProvider } from "@/providers/query-provider";
 import { createClient } from "@/lib/supabase/server";
 
@@ -29,9 +30,19 @@ export default async function TeamLayout({ children, params }: Props) {
     redirect("/teams");
   }
 
+  const { data: team } = await supabase
+    .from("teams")
+    .select("timezone")
+    .eq("id", teamId)
+    .maybeSingle();
+
+  const timezone = normalizeTimeZone(team?.timezone);
+
   return (
     <QueryProvider>
-      <TeamLayoutProvider teamId={teamId}>{children}</TeamLayoutProvider>
+      <TeamLayoutProvider teamId={teamId} timezone={timezone}>
+        {children}
+      </TeamLayoutProvider>
     </QueryProvider>
   );
 }
