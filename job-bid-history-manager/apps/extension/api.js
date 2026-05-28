@@ -106,6 +106,35 @@ async function postCaptureJob(baseUrl, token, pageData, username, reviewed = nul
 }
 
 /**
+ * AI extraction only (Groq) — returns structured fields without saving anything.
+ * @param {string} baseUrl
+ * @param {string} token
+ * @param {{ captured_text: string, page_title?: string, source_url?: string }} pageData
+ */
+async function postExtractJob(baseUrl, token, pageData) {
+  const route = "extension/extract";
+  const startedAt = Date.now();
+  const res = await fetch(`${baseUrl}/api/extension/extract`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      captured_text: pageData?.captured_text || "",
+      page_title: pageData?.page_title || "",
+      source_url: pageData?.source_url || "",
+    }),
+  });
+  const text = await res.text();
+  debugNetwork(route, startedAt, { success: res.ok, status: res.status });
+  if (!res.ok) {
+    throw new Error(parseApiErrorBody(text, res.status));
+  }
+  return text ? JSON.parse(text) : {};
+}
+
+/**
  * Build prompt from server using user's editable prefix + latest/default resume + job JD.
  * @param {string} baseUrl
  * @param {string} token

@@ -330,6 +330,9 @@ export async function getTeamJdSelectionView(teamId: string, _userId: string) {
     label: x.title || x.original_filename || `${x.source_type.toUpperCase()} JD`,
   }));
 
+  const latestJob = (jobs ?? [])[0] ?? null;
+  const latestJdText = latestJob ? String(jdByJobId[latestJob.id] ?? "").trim() : "";
+
   const selectedRow = pref?.manual_input_id
     ? items.find((x) => x.id === pref.manual_input_id) ?? null
     : null;
@@ -359,6 +362,15 @@ export async function getTeamJdSelectionView(teamId: string, _userId: string) {
       jd_preview: String(jdByJobId[j.id] ?? "").slice(0, 200),
       has_jd: Boolean(String(jdByJobId[j.id] ?? "").trim()),
     })),
+    latest_bid: latestJob && latestJdText
+      ? {
+          job_id: latestJob.id,
+          job_title: latestJob.job_title,
+          company_name: latestJob.company_name,
+          captured_at: latestJob.captured_at,
+          jd_text: latestJdText,
+        }
+      : null,
   };
 }
 

@@ -19,11 +19,13 @@
 
     <div id="panelStatus" class="panel-status" role="status" aria-live="polite" hidden></div>
 
-    <nav class="tabs" id="tabs" aria-label="Workspace sections"></nav>
-    <main id="tabContent" class="content"></main>
+    <div class="workspace-main">
+      <nav class="tabs" id="tabs" aria-label="Workspace sections"></nav>
+      <main id="tabContent" class="content"></main>
+    </div>
 
     <footer class="action-bar">
-      <button id="saveCaptureBtn" type="button" class="btn-action primary">Save to Dashboard</button>
+      <button id="previewTabBtn" type="button" class="btn-action primary">Preview</button>
       <button id="promptSendBtn" type="button" class="btn-action secondary">ChatGPT</button>
       <button id="resumeDownloadBtn" type="button" class="btn-action secondary">DOCX</button>
     </footer>
@@ -32,9 +34,11 @@
     <script src="prompt-defaults.js"></script>
     <script src="local-extraction.js"></script>
     <script src="local-prompt.js"></script>
+    <script src="local-storage.js"></script>
     <script src="storage.js"></script>
     <script src="api.js"></script>
     <script src="panel.js"></script>
-    <script src="panel-capture-tab.js"></script>
+    <script src="panel-jd-tab.js"></script>
+    <script src="panel-preview-tab.js"></script>
   </body>
 </html>

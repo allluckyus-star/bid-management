@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Job Bid History Capture",
-  "version": "0.8.23",
+  "version": "0.8.29",
   "description": "Capture job pages, optimize resumes via ChatGPT, and sync to your team dashboard.",
   "permissions": ["storage", "activeTab", "scripting", "contextMenus", "notifications", "downloads"],
   "options_ui": {
@@ -15,8 +15,7 @@
     "http://*/*"
   ],
   "action": {
-    "default_title": "Job Bid Assistant — launcher",
-    "default_popup": "popup.html",
+    "default_title": "Job Bid Assistant — open workspace",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -88,7 +87,9 @@
         "panel.html",
         "panel.css",
         "panel.js",
-        "panel-capture-tab.js",
+        "panel-jd-tab.js",
+        "panel-preview-tab.js",
+        "local-storage.js",
         "config.js",
         "storage.js",
         "api.js",

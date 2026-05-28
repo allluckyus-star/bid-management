@@ -1,9 +1,10 @@
 /**
- * Floating actions when user selects text on non-ChatGPT pages.
- * Sets manual JD name or paste text and switches JD source to manual.
+ * Floating action when the user selects text on non-ChatGPT pages.
+ * Shows a small icon button to the left of the selection. Clicking it sends the
+ * selected text to the background for Groq extraction, which fills the Preview tab.
  */
 (function () {
-  const MIN_SELECTION_LEN = 2;
+  const MIN_SELECTION_LEN = 12;
   const MAX_SELECTION_LEN = 50000;
   const HIDE_DELAY_MS = 120;
 
@@ -35,8 +36,10 @@
     toolbar = document.createElement("div");
     toolbar.id = "jbhm-jd-selection-toolbar";
     toolbar.innerHTML = `
-      <button type="button" data-field="name">Set JD name</button>
-      <button type="button" data-field="text">Set JD text</button>
+      <button type="button" data-action="extract" title="Extract job info with AI → Preview">
+        <span class="jbhm-ico" aria-hidden="true">✨</span>
+        <span class="jbhm-label">Extract to Preview</span>
+      </button>
     `;
     document.documentElement.appendChild(toolbar);
 
@@ -50,10 +53,9 @@
       pendingSelectionText = selectedText();
     });
     toolbar.addEventListener("click", (e) => {
-      const btn = e.target.closest("button[data-field]");
+      const btn = e.target.closest("button[data-action]");
       if (!btn) return;
-      const field = btn.getAttribute("data-field");
-      void applySelection(field);
+      void extractSelection();
     });
   }
 
@@ -63,7 +65,7 @@
     toast.classList.toggle("jbhm-err", isError);
     toast.classList.add("jbhm-visible");
     clearTimeout(showToast._timer);
-    showToast._timer = setTimeout(() => toast.classList.remove("jbhm-visible"), 2600);
+    showToast._timer = setTimeout(() => toast.classList.remove("jbhm-visible"), 2800);
   }
 
   function hideToolbar() {
@@ -73,11 +75,12 @@
 
   function positionToolbar(rect) {
     if (!toolbar) return;
-    const width = toolbar.offsetWidth || 220;
+    const width = toolbar.offsetWidth || 150;
     const height = toolbar.offsetHeight || 34;
-    let left = rect.left + rect.width / 2 - width / 2;
-    let top = rect.bottom + 8;
-    if (top + height > window.innerHeight - 8) top = rect.top - height - 8;
+    // Place to the LEFT of the selection start, vertically centered on the selection.
+    let left = rect.left - width - 8;
+    if (left < 8) left = rect.right + 8; // not enough room on the left → put on the right
+    let top = rect.top + rect.height / 2 - height / 2;
     left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
     top = Math.max(8, Math.min(top, window.innerHeight - height - 8));
     toolbar.style.left = `${left}px`;
@@ -101,52 +104,47 @@
     hideTimer = setTimeout(showToolbar, HIDE_DELAY_MS);
   }
 
-  async function applySelection(field) {
+  async function extractSelection() {
     const text = pendingSelectionText || selectedText();
     pendingSelectionText = "";
     if (!text) {
       ensureUi();
-      showToast("Select some text first.", true);
+      showToast("Select some job text first.", true);
       return;
     }
 
-    const buttons = toolbar.querySelectorAll("button");
-    buttons.forEach((b) => {
-      b.disabled = true;
-    });
+    const btn = toolbar.querySelector("button[data-action]");
+    if (btn) btn.disabled = true;
+    showToast("Extracting with AI…");
 
     try {
       const res = await new Promise((resolve, reject) => {
         chrome.runtime.sendMessage(
           {
-            type: "APPLY_JD_FROM_SELECTION",
-            field,
-            value: text,
-            pageUrl: field === "text" ? window.location.href : null,
+            type: "EXTRACT_TO_PREVIEW",
+            text,
+            sourceUrl: window.location.href,
+            pageTitle: document.title || "",
+            captureMethod: "selection",
           },
           (response) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-            return;
-          }
-          resolve(response);
-        });
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+              return;
+            }
+            resolve(response);
+          },
+        );
       });
-      if (!res?.ok) throw new Error(res?.error || "Failed to apply selection.");
-      showToast(
-        field === "name"
-          ? "JD name set · Manual JD source selected"
-          : "JD text set · Manual JD source selected",
-      );
+      if (!res?.ok) throw new Error(res?.error || "Extraction failed.");
+      showToast("Extracted → opening Preview");
       hideToolbar();
       window.getSelection?.()?.removeAllRanges?.();
     } catch (err) {
       ensureUi();
-      showToast(err?.message || "Could not update JD source.", true);
+      showToast(err?.message || "Could not extract.", true);
     } finally {
-      buttons.forEach((b) => {
-        b.disabled = false;
-      });
+      if (btn) btn.disabled = false;
     }
   }
 

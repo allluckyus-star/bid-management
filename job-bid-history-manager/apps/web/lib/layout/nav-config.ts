@@ -1,10 +1,6 @@
 import {
-  BarChart3,
-  Briefcase,
-  FileText,
   LayoutDashboard,
   Puzzle,
-  ScrollText,
   Settings,
   type LucideIcon,
 } from "lucide-react";
@@ -27,33 +23,9 @@ export function teamNavItems(teamId: string): NavItem[] {
       match: "exact",
     },
     {
-      label: "Applications",
-      href: `${base}/dashboard/applications`,
-      icon: Briefcase,
-      match: "prefix",
-    },
-    {
-      label: "Resumes",
-      href: `${base}/resumes`,
-      icon: FileText,
-      match: "prefix",
-    },
-    {
-      label: "JD Source",
-      href: `${base}/jd`,
-      icon: ScrollText,
-      match: "prefix",
-    },
-    {
       label: "Extension",
       href: `${base}/dashboard/extension`,
       icon: Puzzle,
-      match: "prefix",
-    },
-    {
-      label: "Analytics",
-      href: `${base}/dashboard/analytics`,
-      icon: BarChart3,
       match: "prefix",
     },
     {

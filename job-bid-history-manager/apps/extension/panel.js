@@ -2,12 +2,18 @@ const tabsEl = document.getElementById("tabs");
 const contentEl = document.getElementById("tabContent");
 const siteMetaEl = document.getElementById("siteMeta");
 const connBadgeEl = document.getElementById("connBadge");
-const saveCaptureBtn = document.getElementById("saveCaptureBtn");
+const previewTabBtn = document.getElementById("previewTabBtn");
 const promptSendFooterBtn = document.getElementById("promptSendBtn");
 const resumeDownloadBtn = document.getElementById("resumeDownloadBtn");
 
-const TABS = ["Capture", "JD", "Resume", "Settings", "Prompt"];
-let activeTab = "Capture";
+const TAB_DEFS = [
+  { id: "JD", label: "JD Source", icon: "📋" },
+  { id: "Resume", label: "Resume", icon: "📄" },
+  { id: "Prompt", label: "Prompt", icon: "✏️" },
+  { id: "Preview", label: "Preview", icon: "👁" },
+  { id: "Settings", label: "Settings", icon: "⚙" },
+];
+let activeTab = "JD";
 
 let state = {
   status: null,
@@ -47,9 +53,11 @@ let state = {
     sendPrompt: false,
   },
   captureDraft: null,
+  jdLocal: null,
+  resumeLocalText: "",
+  previewDraft: null,
   localPromptText: "",
   localPromptWarning: "",
-  resumeLabelCache: "",
 };
 
 function send(type, payload = {}) {
@@ -101,9 +109,9 @@ function tabLoadingHtml(label = "Loading…") {
 }
 
 function tabLoadingLabel(tab) {
-  if (tab === "Capture") return "Loading page text…";
   if (tab === "JD") return "Loading JD source…";
-  if (tab === "Resume") return "Loading resumes…";
+  if (tab === "Resume") return "Loading resume…";
+  if (tab === "Preview") return "Loading preview…";
   if (tab === "Settings") return "Loading settings…";
   return "Loading…";
 }
@@ -339,13 +347,15 @@ function arrayBufferToBase64(buffer) {
 
 function renderTabs() {
   tabsEl.innerHTML = "";
-  for (const tab of TABS) {
+  for (const tab of TAB_DEFS) {
     const b = document.createElement("button");
     b.type = "button";
-    b.className = `tab ${tab === activeTab ? "active" : ""}`;
-    b.textContent = tab;
+    b.className = `tab ${tab.id === activeTab ? "active" : ""}`;
+    b.title = tab.label;
+    b.setAttribute("aria-label", tab.label);
+    b.innerHTML = `<span class="tab-glyph" aria-hidden="true">${tab.icon}</span>`;
     b.addEventListener("click", () => {
-      activeTab = tab;
+      activeTab = tab.id;
       void switchTab();
     });
     tabsEl.appendChild(b);
@@ -355,18 +365,24 @@ function renderTabs() {
 async function switchTab() {
   const tab = activeTab;
   renderTabs();
-  const needsFetch = tab === "JD" || tab === "Resume" || tab === "Settings";
+  const needsFetch = tab === "Settings";
   if (needsFetch) {
     setTabsBusy(true);
     showTabLoading(tabLoadingLabel(tab));
   }
 
   try {
-    if (tab === "Capture") {
-      if (!state.captureDraft) state.captureDraft = emptyCaptureDraft();
-    } else if (tab === "JD") await loadJdView();
-    else if (tab === "Resume") await loadResumeLibrary();
-    else if (tab === "Settings") await refreshContext({ forceRefresh: false });
+    if (tab === "JD") {
+      if (!state.jdLocal) await loadJdLocalFromStorage();
+    } else if (tab === "Resume") {
+      state.resumeLocalText = await getLocalResumeText();
+    } else if (tab === "Preview") {
+      await loadPreviewFromStorage();
+    } else if (tab === "Settings") {
+      await refreshContext({ forceRefresh: false });
+    } else if (tab === "Prompt") {
+      state.promptTemplate = await loadPromptTemplate();
+    }
     if (activeTab === tab) await renderContent();
   } catch (err) {
     if (activeTab === tab) {
@@ -378,96 +394,64 @@ async function switchTab() {
   }
 }
 
-function jdTabHtml() {
-  if (!state.status?.connected) {
-    return `<p class="page-loading">Connect in Settings (capture token) to manage JD source.</p>`;
-  }
-  if (state.jdBusy && !state.jdView) {
-    return `<p class="page-loading">Loading JD source…</p>`;
-  }
-
-  const manual = syncManualSourcesFromView(state.jdView);
-  const mode = state.jdDraft?.mode === "history" ? "latest" : state.jdDraft?.mode || "latest";
-  const uploadLabel =
-    state.jdPendingFile?.name || manual.uploadLabel || "Drag or upload JD (.docx / .pdf)";
-
+function resumeLocalTabHtml() {
+  const text = state.resumeLocalText || "";
   return `
-    ${tabFeedbackHtml("JD")}
-    <section class="${modeCardClass("manual")}" data-mode="manual">
-      <h2>Manual JD</h2>
-      <p class="hint">Paste text or upload a file — same as dashboard JD Source.</p>
-      <div class="manual-grid">
-        <div class="${manualPaneClass("paste")}" data-manual="paste">
-          ${mode === "manual" && state.jdManualSource === "paste" ? '<span class="pane-badge">Selected</span>' : ""}
-          <textarea id="jdManualText" class="textarea borderless" placeholder="Paste JD text…" ${state.jdSaving ? "disabled" : ""}>${escapeHtml(state.jdManualText)}</textarea>
-          <div class="manual-pane-footer">
-            <label class="label" for="jdManualTitle">Manual JD name (used for DOCX filename when paste)</label>
-            <input id="jdManualTitle" class="input manual-name-input" type="text" maxlength="120" placeholder="e.g. data-engineer" value="${escapeHtml(state.jdManualTitleInput)}" ${state.jdSaving ? "disabled" : ""} />
-          </div>
-        </div>
-        <div class="${manualPaneClass("upload")}" data-manual="upload" id="jdUploadZone">
-          ${mode === "manual" && state.jdManualSource === "upload" ? '<span class="pane-badge">Selected</span>' : ""}
-          <span aria-hidden="true">↑</span>
-          <span>${escapeHtml(uploadLabel)}</span>
-          <input type="file" id="jdFileInput" class="hidden-input" accept=".docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-        </div>
+    <section class="settings-section source-tab">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <h2 style="margin:0">Resume</h2>
+        <span class="badge local">Local only</span>
       </div>
+      <p class="muted">${text.length.toLocaleString()} characters</p>
+      <textarea id="resumeLocalText" class="textarea mono source-editor resume-editor-tall" placeholder="Paste resume text…">${escapeHtml(text)}</textarea>
+      <input type="file" id="resumeFileInput" accept=".txt,.md,text/plain" hidden />
+      <button type="button" class="btn upload-block-btn" id="resumeUploadBtn">Upload file</button>
     </section>
-
-    <section class="${modeCardClass("latest")}" data-mode="latest">
-      <h2>Latest job bid JD</h2>
-      <p class="muted">Uses the most recently captured job description for ChatGPT prompts.</p>
-    </section>
-
-    <div class="sticky-footer-actions row">
-      <button type="button" class="btn primary" id="jdSaveBtn" ${state.jdSaving ? "disabled" : ""}>
-        ${state.jdSaving ? "Saving…" : "Save JD source"}
-      </button>
-      <button type="button" class="btn" id="jdRefreshBtn" ${state.jdBusy ? "disabled" : ""}>Refresh</button>
-    </div>
   `;
 }
 
+async function persistResumeLocal() {
+  const text = state.resumeLocalText || "";
+  await saveLocalResumeText(text);
+}
+
+let resumeSaveTimer = null;
+function scheduleResumePersist() {
+  clearTimeout(resumeSaveTimer);
+  resumeSaveTimer = setTimeout(() => void persistResumeLocal(), 400);
+}
+
+function wireResumeLocalActions() {
+  const ta = document.getElementById("resumeLocalText");
+  ta?.addEventListener("input", (e) => {
+    state.resumeLocalText = String(e.target.value || "");
+    scheduleResumePersist();
+  });
+
+  const input = document.getElementById("resumeFileInput");
+  document.getElementById("resumeUploadBtn")?.addEventListener("click", () => input?.click());
+  input?.addEventListener("change", async () => {
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+    try {
+      const loaded = await file.text();
+      state.resumeLocalText = loaded;
+      await persistResumeLocal();
+      setInlineBanner("Resume loaded from file (local only).", "ok");
+      await renderContent();
+    } catch {
+      setInlineBanner("Could not read file.", "err");
+    }
+  });
+}
+
+function jdTabHtml() {
+  return jdSourceTabHtml();
+}
+
 function resumeTabHtml() {
-  if (!state.status?.connected) {
-    return `<p class="page-loading">Connect in Settings to manage your resume library.</p>`;
-  }
-  if (state.resumeLoading) {
-    return `<p class="page-loading">Loading resumes…</p>`;
-  }
-
-  const list =
-    state.resumeItems.length === 0
-      ? `<div class="empty-state">No resumes yet. Upload your master .docx for ChatGPT optimization.</div>`
-      : `<ul class="resume-list">${state.resumeItems
-          .map(
-            (item) => `
-        <li class="resume-item">
-          <div class="resume-item-info">
-            <p class="resume-item-title">${escapeHtml(item.original_filename)}</p>
-            <p class="resume-item-meta">${item.is_default ? "Default" : "Library"} · ${new Date(item.uploaded_at).toLocaleString()}</p>
-          </div>
-          <div class="resume-item-actions">
-            ${
-              !item.is_default
-                ? `<button type="button" class="btn sm" data-resume-default="${escapeHtml(item.id)}">Set default</button>
-                   <button type="button" class="btn sm ghost" data-resume-delete="${escapeHtml(item.id)}">Remove</button>`
-                : ""
-            }
-          </div>
-        </li>`,
-          )
-          .join("")}</ul>`;
-
-  return `
-    ${tabFeedbackHtml("Resume")}
-    <p class="hint">Upload and set your default resume — matches the dashboard Resumes page.</p>
-    <div class="row">
-      <button type="button" class="btn primary" id="resumeUploadBtn" ${state.resumeBusy ? "disabled" : ""}>${state.resumeBusy ? "Uploading..." : "Upload .docx"}</button>
-      <input type="file" id="resumeFileInput" class="hidden-input" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-    </div>
-    ${list}
-  `;
+  return resumeLocalTabHtml();
 }
 
 function settingsTabHtml() {
@@ -566,48 +550,31 @@ function settingsTabHtml() {
 }
 
 function promptTabHtml() {
-  const jdText = state.captureDraft?.jdText || state.jdManualText || "";
-  const chars = state.localPromptText ? promptCharCount(state.localPromptText) : 0;
-  const warn = state.localPromptWarning || "";
   return `
-    <section class="settings-section">
-      <h3>Local prompt (free-tier)</h3>
-      <p class="hint">Generate on device — no API call. Uses Capture JD + template below.</p>
-      <div class="row">
-        <button type="button" class="btn primary" id="promptGenerateLocalBtn">Generate prompt</button>
-        <button type="button" class="btn" id="promptCopyLocalBtn" ${state.localPromptText ? "" : "disabled"}>Copy prompt</button>
-        <button type="button" class="btn" id="promptSendLocalBtn" ${state.localPromptText ? "" : "disabled"}>Send local to ChatGPT</button>
-      </div>
-      ${warn ? `<p class="field-feedback warn">${escapeHtml(warn)}</p>` : ""}
-      ${chars ? `<p class="muted">${chars.toLocaleString()} characters</p>` : ""}
-      <textarea id="localPromptPreview" class="textarea mono" readonly style="min-height:140px" placeholder="Generate to preview…">${escapeHtml(state.localPromptText)}</textarea>
-      <p class="muted">Server prompt (resume + team JD) uses API — footer ChatGPT button or below.</p>
-    </section>
-    <section class="settings-section">
-      <h3>Editable prompt template</h3>
-      <p class="hint">Stored locally in this browser.</p>
-      <textarea id="promptEditor" class="textarea mono" style="min-height:160px">${escapeHtml(state.promptTemplate)}</textarea>
-      <div class="row">
-        <button type="button" class="btn" id="promptResetBtn" ${state.settingsBusy.savePrompt || state.settingsBusy.sendPrompt ? "disabled" : ""}>Reset default</button>
-        <button type="button" class="btn" id="promptSaveBtn" ${state.settingsBusy.savePrompt ? "disabled" : ""}>
-          ${state.settingsBusy.savePrompt ? "Saving…" : "Save template"}
-        </button>
-        <button type="button" class="btn" id="promptSendTabBtn" ${state.settingsBusy.sendPrompt ? "disabled" : ""}>
-          ${state.settingsBusy.sendPrompt ? "Server prompt…" : "Server prompt → ChatGPT"}
-        </button>
-      </div>
-    </section>
-    <section class="settings-section">
-      <h3>JD for prompt</h3>
-      <p class="muted">${jdText.length ? `${jdText.length.toLocaleString()} chars from Capture tab` : "Capture or paste JD on Capture tab first."}</p>
-    </section>
+    <div class="prompt-tab-layout">
+      <section class="settings-section prompt-template-section">
+        <div class="row" style="justify-content:space-between;align-items:center">
+          <h3 style="margin:0">Prompt template</h3>
+          <button type="button" class="btn ghost btn-sm" id="promptResetBtn">Reset default</button>
+        </div>
+        <p class="hint">Uses local JD + resume when you send from the footer ChatGPT button.</p>
+        <textarea id="promptEditor" class="textarea mono prompt-editor-tall">${escapeHtml(state.promptTemplate)}</textarea>
+      </section>
+      <section class="settings-section prompt-suffix-section">
+        <h3>Locked suffix</h3>
+        <textarea class="textarea mono prompt-suffix-tall" readonly>${escapeHtml(LOCKED_PROMPT_SUFFIX_PREVIEW)}</textarea>
+      </section>
+    </div>
   `;
 }
 
 async function renderContent() {
-  if (activeTab === "Capture") contentEl.innerHTML = captureTabHtml();
-  else if (activeTab === "JD") contentEl.innerHTML = jdTabHtml();
+  contentEl.classList.toggle("content--prompt", activeTab === "Prompt");
+  contentEl.classList.toggle("content--jd", activeTab === "JD");
+  contentEl.classList.toggle("content--resume", activeTab === "Resume");
+  if (activeTab === "JD") contentEl.innerHTML = jdTabHtml();
   else if (activeTab === "Resume") contentEl.innerHTML = resumeTabHtml();
+  else if (activeTab === "Preview") contentEl.innerHTML = previewTabHtml();
   else if (activeTab === "Settings") contentEl.innerHTML = settingsTabHtml();
   else contentEl.innerHTML = promptTabHtml();
   wireTabActions();
@@ -711,129 +678,39 @@ function showJdPreview(text) {
   backdrop.querySelector("#jdDialogClose")?.addEventListener("click", () => backdrop.remove());
 }
 
+function wirePromptTabActions() {
+  document.getElementById("promptResetBtn")?.addEventListener("click", () => {
+    const editor = document.getElementById("promptEditor");
+    if (editor) editor.value = DEFAULT_PROMPT_TEMPLATE;
+    void savePromptTemplate(DEFAULT_PROMPT_TEMPLATE);
+    state.promptTemplate = DEFAULT_PROMPT_TEMPLATE;
+  });
+  document.getElementById("promptEditor")?.addEventListener("input", (e) => {
+    state.promptTemplate = String(e.target.value || "");
+    clearTimeout(wirePromptTabActions._saveTimer);
+    wirePromptTabActions._saveTimer = setTimeout(() => {
+      void savePromptTemplate(state.promptTemplate);
+    }, 500);
+  });
+}
+
 function wireTabActions() {
-  if (activeTab === "Capture") {
-    wireCaptureTabActions();
+  if (activeTab === "JD") {
+    wireJdTabActions();
     return;
   }
-
-  contentEl.querySelectorAll("[data-mode]").forEach((el) => {
-    el.addEventListener("click", (e) => {
-      if (e.target.closest("[data-skip-mode-select], button, input, textarea, label, table, a")) return;
-      selectJdMode(el.getAttribute("data-mode"));
-      refreshJdSelectionUi();
-      void renderContent();
-    });
-  });
-
-  contentEl.querySelectorAll("[data-manual]").forEach((el) => {
-    el.addEventListener("click", (e) => {
-      if (e.target.closest("textarea, input, label")) return;
-      selectManualSource(el.getAttribute("data-manual"));
-      refreshJdSelectionUi();
-    });
-  });
-
-  const jdManual = document.getElementById("jdManualText");
-  const jdManualTitle = document.getElementById("jdManualTitle");
-  const focusManualPaste = () => {
-    selectManualSource("paste");
-    refreshJdSelectionUi();
-  };
-  jdManualTitle?.addEventListener("input", (e) => {
-    state.jdManualTitleInput = String(e.target.value || "");
-    selectManualSource("paste");
-    refreshJdSelectionUi();
-  });
-  jdManualTitle?.addEventListener("focus", focusManualPaste);
-  jdManual?.addEventListener("input", (e) => {
-    state.jdManualText = String(e.target.value || "");
-    selectManualSource("paste");
-    refreshJdSelectionUi();
-  });
-  jdManual?.addEventListener("focus", focusManualPaste);
-
-  const jdUploadZone = document.getElementById("jdUploadZone");
-  const jdFileInput = document.getElementById("jdFileInput");
-  jdUploadZone?.addEventListener("click", (e) => {
-    if (e.target.closest("textarea")) return;
-    selectManualSource("upload");
-    jdFileInput?.click();
-  });
-  jdFileInput?.addEventListener("change", () => {
-    const file = jdFileInput.files?.[0];
-    if (!file) return;
-    state.jdPendingFile = file;
-    selectManualSource("upload");
-    void renderContent();
-  });
-
-  document.getElementById("jdSaveBtn")?.addEventListener("click", () => void saveJdSelection());
-  document.getElementById("jdRefreshBtn")?.addEventListener("click", async () => {
-    await loadJdView();
-    await renderContent();
-  });
-
-  const resumeFileInput = document.getElementById("resumeFileInput");
-  document.getElementById("resumeUploadBtn")?.addEventListener("click", () => resumeFileInput?.click());
-  resumeFileInput?.addEventListener("change", async () => {
-    const file = resumeFileInput.files?.[0];
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith(".docx")) {
-      setInlineBanner("Only .docx files are allowed.", "err");
-      return;
-    }
-    state.resumeBusy = true;
-    await renderContent();
-    try {
-      const buffer = await fileToBuffer(file);
-      const res = await panelApi("UPLOAD_RESUME", {
-        fileBase64: arrayBufferToBase64(buffer),
-        fileName: file.name,
-        mimeType: file.type,
-        setDefault: state.resumeItems.length === 0,
-      });
-      if (!res.ok) throw new Error(res.error);
-      await loadResumeLibrary();
-      setInlineBanner("Resume uploaded.", "ok");
-    } catch (err) {
-      setInlineBanner(err?.message || "Upload failed.", "err");
-    } finally {
-      state.resumeBusy = false;
-      resumeFileInput.value = "";
-      await renderContent();
-    }
-  });
-
-  contentEl.querySelectorAll("[data-resume-default]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      state.resumeBusy = true;
-      await renderContent();
-      const res = await panelApi("SET_RESUME_DEFAULT", { resumeId: btn.getAttribute("data-resume-default") });
-      state.resumeBusy = false;
-      if (!res.ok) setInlineBanner(res.error || "Update failed.", "err");
-      else {
-        await loadResumeLibrary();
-        setInlineBanner("Default resume updated.", "ok");
-      }
-      await renderContent();
-    });
-  });
-
-  contentEl.querySelectorAll("[data-resume-delete]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      state.resumeBusy = true;
-      await renderContent();
-      const res = await panelApi("DELETE_RESUME", { resumeId: btn.getAttribute("data-resume-delete") });
-      state.resumeBusy = false;
-      if (!res.ok) setInlineBanner(res.error || "Delete failed.", "err");
-      else {
-        await loadResumeLibrary();
-        setInlineBanner("Resume removed.", "ok");
-      }
-      await renderContent();
-    });
-  });
+  if (activeTab === "Resume") {
+    wireResumeLocalActions();
+    return;
+  }
+  if (activeTab === "Preview") {
+    wirePreviewTabActions();
+    return;
+  }
+  if (activeTab === "Prompt") {
+    wirePromptTabActions();
+    return;
+  }
 
   document.getElementById("settingsToken")?.addEventListener("input", (e) => {
     state.settingsTokenInput = String(e.target?.value || "");
@@ -961,81 +838,6 @@ function wireTabActions() {
       await renderContent();
     });
   });
-
-  const bindPromptSend = async () => {
-    const editor = document.getElementById("promptEditor");
-    state.settingsBusy.sendPrompt = true;
-    await renderContent();
-    try {
-      if (editor) await savePromptTemplate(String(editor.value || DEFAULT_PROMPT_TEMPLATE));
-      const res = await send("GENERATE_CHATGPT_PROMPT");
-      setInlineBanner(
-        res?.status === "ok" ? "Prompt sent to ChatGPT." : res?.detail || res?.error || "Prompt failed.",
-        res?.status === "ok" ? "ok" : "err",
-      );
-    } finally {
-      state.settingsBusy.sendPrompt = false;
-      await renderContent();
-    }
-  };
-
-  document.getElementById("promptResetBtn")?.addEventListener("click", () => {
-    const editor = document.getElementById("promptEditor");
-    if (editor) editor.value = DEFAULT_PROMPT_TEMPLATE;
-  });
-  document.getElementById("promptSaveBtn")?.addEventListener("click", async () => {
-    const editor = document.getElementById("promptEditor");
-    state.settingsBusy.savePrompt = true;
-    await renderContent();
-    try {
-      await savePromptTemplate(String(editor?.value || DEFAULT_PROMPT_TEMPLATE));
-      setInlineBanner("Prompt saved.", "ok");
-    } finally {
-      state.settingsBusy.savePrompt = false;
-      await renderContent();
-    }
-  });
-  document.getElementById("promptSendTabBtn")?.addEventListener("click", () => void bindPromptSend());
-
-  document.getElementById("promptGenerateLocalBtn")?.addEventListener("click", async () => {
-    const editor = document.getElementById("promptEditor");
-    if (editor) state.promptTemplate = String(editor.value || DEFAULT_PROMPT_TEMPLATE);
-    const jdText = state.captureDraft?.jdText || "";
-    const text = buildLocalChatGptPrompt({
-      template: state.promptTemplate,
-      jdText,
-      jobTitle: state.captureDraft?.title,
-      company: state.captureDraft?.company,
-      resumeLabel: state.resumeLabelCache || "your default resume",
-      username: state.status?.username,
-    });
-    state.localPromptText = text;
-    state.localPromptWarning = promptSizeWarning(promptCharCount(text));
-    setInlineBanner("Prompt generated locally (no API).", "ok");
-    await renderContent();
-  });
-
-  document.getElementById("promptCopyLocalBtn")?.addEventListener("click", async () => {
-    if (!state.localPromptText) return;
-    try {
-      await navigator.clipboard.writeText(state.localPromptText);
-      setInlineBanner("Prompt copied.", "ok");
-    } catch {
-      setInlineBanner("Could not copy to clipboard.", "err");
-    }
-  });
-
-  document.getElementById("promptSendLocalBtn")?.addEventListener("click", async () => {
-    if (!state.localPromptText) {
-      setInlineBanner("Generate a local prompt first.", "warn");
-      return;
-    }
-    const res = await send("PASTE_LOCAL_PROMPT", { text: state.localPromptText });
-    setInlineBanner(
-      res?.status === "ok" ? "Local prompt sent to ChatGPT." : res?.detail || "Could not open ChatGPT.",
-      res?.status === "ok" ? "ok" : "err",
-    );
-  });
 }
 
 async function openDashboard(path = "/dashboard") {
@@ -1062,51 +864,94 @@ window.addEventListener("message", (event) => {
   applyCollapsedUi(Boolean(data.collapsed));
 });
 
-saveCaptureBtn.addEventListener("click", async () => {
-  if (activeTab !== "Capture") {
-    activeTab = "Capture";
-    await switchTab();
-    if (!state.captureDraft?.jdText) {
-      await refreshCaptureFromPage();
-    }
-    return;
-  }
-  await saveReviewedCaptureToDashboard(false);
+previewTabBtn.addEventListener("click", async () => {
+  activeTab = "Preview";
+  await switchTab();
 });
 
 promptSendFooterBtn.addEventListener("click", async () => {
   const prevText = promptSendFooterBtn.textContent;
   promptSendFooterBtn.disabled = true;
   promptSendFooterBtn.textContent = "Sending…";
-  const res = await send("GENERATE_CHATGPT_PROMPT");
-  setInlineBanner(
-    res?.status === "ok" ? "Prompt sent to ChatGPT." : res?.detail || res?.error || "Prompt failed.",
-    res?.status === "ok" ? "ok" : "err",
-  );
-  promptSendFooterBtn.disabled = false;
-  promptSendFooterBtn.textContent = prevText || "ChatGPT";
+  try {
+    const editor = document.getElementById("promptEditor");
+    if (editor) {
+      state.promptTemplate = String(editor.value || DEFAULT_PROMPT_TEMPLATE);
+      await savePromptTemplate(state.promptTemplate);
+    } else {
+      state.promptTemplate = await loadPromptTemplate();
+    }
+    const text = buildLocalChatGptPrompt({
+      template: state.promptTemplate,
+      jdText: await getEffectiveJdText(),
+      jobTitle: state.jdLocal?.title,
+      company: state.previewDraft?.company_name,
+      resumeLabel: state.resumeLocalText
+        ? `${state.resumeLocalText.length} chars local resume`
+        : "local resume",
+      username: state.status?.username,
+    });
+    state.localPromptText = text;
+    await setPreviewCaptureMode(true);
+    const res = await send("PASTE_LOCAL_PROMPT", {
+      text,
+      autoCapture: true,
+      previewOnly: true,
+    });
+    setInlineBanner(
+      res?.status === "ok" ? "Sent to ChatGPT — check Preview tab." : res?.detail || "Send failed.",
+      res?.status === "ok" ? "ok" : "err",
+    );
+    if (res?.status === "ok" && activeTab !== "Preview") {
+      activeTab = "Preview";
+      await switchTab();
+    }
+  } finally {
+    promptSendFooterBtn.disabled = false;
+    promptSendFooterBtn.textContent = prevText || "ChatGPT";
+  }
 });
 
 resumeDownloadBtn.addEventListener("click", async () => {
   const prevText = resumeDownloadBtn.textContent;
   resumeDownloadBtn.disabled = true;
   resumeDownloadBtn.textContent = "Preparing…";
-  const res = await send("DOWNLOAD_EXPORT");
-  setInlineBanner(
-    res?.status === "ok" ? "Download started." : res?.detail || res?.error || "Download failed.",
-    res?.status === "ok" ? "ok" : "err",
-  );
-  resumeDownloadBtn.disabled = false;
-  resumeDownloadBtn.textContent = prevText || "DOCX";
+  try {
+    await loadPreviewFromStorage();
+    const text = state.previewDraft?.gpt_text || "";
+    const res = text.trim()
+      ? await send("RENDER_PREVIEW_DOCX", {
+          text,
+          jd_label: state.jdLocal?.title || state.previewDraft?.job_title || "resume",
+        })
+      : await send("DOWNLOAD_EXPORT");
+    setInlineBanner(
+      res?.status === "ok" ? "Download started." : res?.detail || res?.error || "Download failed.",
+      res?.status === "ok" ? "ok" : "err",
+    );
+  } finally {
+    resumeDownloadBtn.disabled = false;
+    resumeDownloadBtn.textContent = prevText || "DOCX";
+  }
 });
 
 async function boot() {
   showTabLoading("Connecting…");
-  state.captureDraft = emptyCaptureDraft();
   await refreshContext({ forceRefresh: false });
-  const pageCtx = await send("GET_PAGE_CONTEXT");
-  if (pageCtx && !pageCtx.status) state.page = pageCtx;
   await syncWorkspaceLayoutFromHost();
+  await Promise.all([
+    loadJdLocalFromStorage(),
+    getLocalResumeText().then((text) => {
+      state.resumeLocalText = text;
+    }),
+    loadPreviewFromStorage(),
+    loadPromptTemplate().then((template) => {
+      state.promptTemplate = template;
+    }),
+  ]);
+  if (await consumeOpenToPreview()) {
+    activeTab = "Preview";
+  }
   renderTabs();
   await renderContent();
 }
@@ -1114,9 +959,15 @@ async function boot() {
 void boot();
 
 chrome.runtime.onMessage.addListener((message) => {
-  if (message?.type !== "JD_SETTINGS_UPDATED") return;
-  if (activeTab === "JD" && state.status?.connected) {
-    void loadJdView().then(() => renderContent());
+  if (message?.type === "PREVIEW_DRAFT_UPDATED") {
+    void Promise.all([loadPreviewFromStorage(), consumeOpenToPreview()]).then(async () => {
+      if (activeTab !== "Preview") {
+        activeTab = "Preview";
+        renderTabs();
+      }
+      await renderContent();
+      setInlineBanner("Preview updated — review and edit before accepting.", "ok");
+    });
   }
 });
 

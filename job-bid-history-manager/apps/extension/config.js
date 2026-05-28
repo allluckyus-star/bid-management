@@ -5,7 +5,7 @@ const JBHM_CONFIG = {
   PRODUCTION_URL: "https://bid-management-peach.vercel.app",
   LOCAL_URL: "http://localhost:3000",
   DEFAULT_ENV: "production",
-  CONTEXT_MENU_TITLE: "Capture this page to Job Bid History",
+  CONTEXT_MENU_TITLE: "Capture this page → extract to Preview",
   /**
    * Free-tier safe mode (recommended on Vercel Hobby):
    * review-first capture, local prompt, cached status, no auto server AI on capture.

@@ -1,4 +1,4 @@
-importScripts("config.js", "prompt-defaults.js", "storage.js", "api.js", "download-path.js");
+importScripts("config.js", "prompt-defaults.js", "storage.js", "local-storage.js", "api.js", "download-path.js");
 
 const CHATGPT_URL_PATTERNS = [
   "https://chatgpt.com/*",
@@ -133,6 +133,10 @@ async function toggleWorkspaceOnTab(tab) {
   }
 }
 
+chrome.action.onClicked.addListener((tab) => {
+  void toggleWorkspaceOnTab(tab);
+});
+
 function tabIsChatGpt(tab) {
   try {
     return isChatGptHostname(new URL(tab?.url || "").hostname);
@@ -220,6 +224,72 @@ async function applyJdFromSelection(field, value, pageUrl) {
   notify("JD source", label);
   chrome.runtime.sendMessage({ type: "JD_SETTINGS_UPDATED" }).catch(() => {});
   return { ok: true };
+}
+
+function dashIfEmpty(value) {
+  const s = String(value ?? "").trim();
+  return s || "-";
+}
+
+/** Run Groq extraction on text and write the result into the Preview draft (no DB save). */
+async function extractAndFillPreview({ tabId, capturedText, sourceUrl, pageTitle, captureMethod }) {
+  const settings = await loadExtensionSettings();
+  if (!settings.captureToken) {
+    return { ok: false, error: "Add a capture token in extension Settings." };
+  }
+  const status = await getExtensionStatus();
+  if (!status.connected) {
+    return { ok: false, error: status.error || "Extension not connected." };
+  }
+
+  const text = String(capturedText || "").trim();
+  if (text.length < 40) {
+    return { ok: false, error: "Not enough text to extract." };
+  }
+
+  let res;
+  try {
+    res = await postExtractJob(settings.apiBaseUrl, settings.captureToken, {
+      captured_text: text,
+      page_title: pageTitle || "",
+      source_url: sourceUrl || "",
+    });
+  } catch (err) {
+    return { ok: false, error: err?.message || "Extraction failed." };
+  }
+
+  const ex = res?.extraction || {};
+  const tags = Array.isArray(ex.tag_names) ? ex.tag_names.filter(Boolean).join(", ") : "";
+  const existing = (await getPreviewDraft()) || {};
+
+  await savePreviewDraft({
+    job_title: dashIfEmpty(ex.job_title),
+    company_name: dashIfEmpty(ex.company_name),
+    location: dashIfEmpty(ex.location),
+    salary_text: dashIfEmpty(ex.salary_text),
+    employment_type: dashIfEmpty(ex.employment_type),
+    tags: dashIfEmpty(tags),
+    jd_text: String(ex.cleaned_job_description || text || "").trim() || "-",
+    resume_path: existing.resume_path || "",
+    notes: "",
+    gpt_text: "",
+    status: "applied",
+    source_url: sourceUrl || "",
+    page_title: pageTitle || "",
+    capture_method: captureMethod || "capture",
+  });
+
+  await setOpenToPreview(true);
+  if (tabId) {
+    try {
+      await sendWorkspaceMessage(tabId, { type: "OPEN_WORKSPACE" });
+    } catch {
+      /* ignore — panel may already be open or page not injectable */
+    }
+  }
+  await sleep(350);
+  chrome.runtime.sendMessage({ type: "PREVIEW_DRAFT_UPDATED" }).catch(() => {});
+  return { ok: true, model: res?.model };
 }
 
 async function captureActiveTab(tabId, options = {}) {
@@ -475,7 +545,7 @@ async function downloadBlobToPath(blob, filename) {
 async function runGenerateChatGptPrompt(tabOverride) {
   const tab = tabOverride || (await getActiveTab());
   if (!(await isExtensionEnabled())) {
-    throw new Error("Extension is OFF. Turn it ON in the popup.");
+    throw new Error("Extension is OFF. Turn it ON in Settings.");
   }
 
   if (!tabIsChatGpt(tab)) {
@@ -562,6 +632,19 @@ async function downloadManualDocxFromGptText(text, tabId) {
 }
 
 async function submitGptResultText(text, opts = {}) {
+  if (opts.previewOnly || (await isPreviewCaptureMode())) {
+    await setPreviewCaptureMode(false);
+    // Merge GPT result into the existing preview draft so extracted fields are kept.
+    const existing = (await getPreviewDraft()) || {};
+    await savePreviewDraft({
+      ...existing,
+      gpt_text: text,
+    });
+    notify("Preview ready", "ChatGPT result added — review and Accept.");
+    chrome.runtime.sendMessage({ type: "PREVIEW_DRAFT_UPDATED" }).catch(() => {});
+    return { preview: true };
+  }
+
   const settings = await loadExtensionSettings();
   if (!settings.captureToken) throw new Error("Add capture token in Settings.");
 
@@ -643,18 +726,28 @@ async function downloadLastExport() {
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== "jbhm-capture" || !tab?.id) return;
-  if (JBHM_CONFIG.FREE_TIER_SAFE_MODE) {
-    notify("Job Bid History", "Open workspace Capture tab to review before saving.");
-    if (tabUrlInjectable(tab.url)) {
-      try {
-        await sendWorkspaceMessage(tab.id, { type: "OPEN_WORKSPACE" });
-      } catch {
-        /* ignore */
-      }
-    }
+  if (!tabUrlInjectable(tab.url)) {
+    notify("Job Bid History", "Capture is not available on this page.");
     return;
   }
-  await captureActiveTab(tab.id, { setJdToLatest: true });
+  if (tabIsChatGpt(tab)) {
+    notify("Job Bid History", "Capture is disabled on the ChatGPT page.");
+    return;
+  }
+  notify("Job Bid History", "Reading page and extracting with AI…");
+  try {
+    const pageData = await chrome.tabs.sendMessage(tab.id, { type: "GET_VISIBLE_TEXT" });
+    const out = await extractAndFillPreview({
+      tabId: tab.id,
+      capturedText: pageData?.captured_text || "",
+      sourceUrl: pageData?.source_url || tab.url || "",
+      pageTitle: pageData?.page_title || tab.title || "",
+      captureMethod: pageData?.capture_method || "page",
+    });
+    if (!out.ok) notify("Capture failed", out.error || "Could not extract job data.");
+  } catch (err) {
+    notify("Capture failed", err?.message || String(err));
+  }
 });
 
 chrome.commands.onCommand.addListener(async (command) => {
@@ -722,6 +815,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     applyJdFromSelection(field, String(message.value || ""), String(message.pageUrl || ""))
       .then(sendResponse)
       .catch((err) => sendResponse({ ok: false, error: err?.message || String(err) }));
+    return true;
+  }
+
+  if (type === "EXTRACT_TO_PREVIEW") {
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+      const tab = tabs[0];
+      const out = await extractAndFillPreview({
+        tabId: tab?.id,
+        capturedText: String(message.text || ""),
+        sourceUrl: String(message.sourceUrl || tab?.url || ""),
+        pageTitle: String(message.pageTitle || tab?.title || ""),
+        captureMethod: String(message.captureMethod || "selection"),
+      });
+      sendResponse(out);
+    });
     return true;
   }
 
@@ -803,7 +911,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           if (!chatId) throw new Error("Open ChatGPT in a tab first.");
           tab = { id: chatId };
         }
-        await pasteAndSubmitOnTab(tab.id, String(message.text || ""), false, false);
+        if (message.previewOnly) await setPreviewCaptureMode(true);
+        await pasteAndSubmitOnTab(
+          tab.id,
+          String(message.text || ""),
+          message.autoCapture !== false,
+          message.manualOnly === true,
+        );
         sendResponse({ status: "ok" });
       } catch (err) {
         sendResponse({ status: "error", detail: err?.message || String(err) });
@@ -831,7 +945,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           await sendWorkspaceMessage(tab.id, { type: "OPEN_WORKSPACE" });
           sendResponse({
             ok: true,
-            message: "Workspace opened — review on Capture tab, then Save to Dashboard.",
+            message: "Workspace opened — review in Preview tab, then Accept & send to dashboard.",
           });
         } catch (err) {
           sendResponse({ ok: false, error: err?.message || "Could not open workspace." });
@@ -930,15 +1044,30 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (type === "RENDER_PREVIEW_DOCX") {
+    (async () => {
+      try {
+        const result = await downloadManualDocxFromGptText(String(message.text || ""), null);
+        await saveLastGeneratedDocxReference({ filename: result.filename, at: new Date().toISOString() });
+        sendResponse({ status: "ok", filename: result.filename });
+      } catch (err) {
+        sendResponse({ status: "error", detail: err?.message || String(err) });
+      }
+    })();
+    return true;
+  }
+
   if (type === "SEND_GPT_RESULT") {
     (async () => {
       try {
+        const previewOnly = message.previewOnly === true || (await isPreviewCaptureMode());
         const result = await submitGptResultText(String(message.text || ""), {
-          autoDownload: true,
+          autoDownload: !previewOnly,
           manualOnly: message.manualOnly === true,
+          previewOnly,
           tabId: _sender?.tab?.id,
         });
-        sendResponse({ status: "ok", result, manual: result?.manual === true });
+        sendResponse({ status: "ok", result, manual: result?.manual === true, preview: result?.preview === true });
       } catch (err) {
         sendResponse({ status: "error", detail: err?.message || String(err) });
       }
