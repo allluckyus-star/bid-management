@@ -529,8 +529,9 @@ export function JobsTable({
               <thead>{headerRow(false)}</thead>
             </table>
           </div>
-          <div className="flex h-32 flex-col items-center justify-center gap-2 border-t text-sm text-muted-foreground">
-            <p>No bids match your filters.</p>
+          <div className="flex h-40 flex-col items-center justify-center gap-3 border-t px-4 text-center text-sm text-muted-foreground">
+            <p>No jobs match your filters.</p>
+            <p className="text-xs">Try clearing filters or capture a new job with the extension.</p>
           </div>
         </div>
       ) : (
@@ -566,7 +567,7 @@ export function JobsTable({
                           <td
                             key={cell.id}
                             className={cn(
-                              "px-3 py-2.5 align-middle",
+                              "px-3 py-3 align-middle",
                               meta?.align === "center" && centeredCell,
                             )}
                           >

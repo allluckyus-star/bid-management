@@ -62,7 +62,16 @@
   * {
     @apply border-border;
   }
+  html,
+  body {
+    height: 100%;
+  }
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Next.js dev toolbar (bottom-left “N”) — hidden in local dev when devIndicators is insufficient */
+nextjs-portal {
+  display: none !important;
 }

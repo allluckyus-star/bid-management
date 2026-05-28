@@ -1,7 +1,6 @@
 "use client";
 
 import { Upload } from "lucide-react";
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   JobColumnSelections,
@@ -28,6 +27,7 @@ import {
 } from "@/lib/api/client";
 import { cycleColumnSort, isFilterableField, isOrderableField } from "@/lib/jbhm/column-controls";
 import { notifyActionSuccess, notifyLoadError } from "@/lib/jbhm/notify";
+import { PageContainer } from "@/components/layout/page-container";
 import { useTeamTimezone } from "@/context/team-context";
 import { formatDate } from "@/lib/utils";
 
@@ -393,16 +393,7 @@ export function TeamJdPage({ teamId }: { teamId: string }) {
   };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">JD source for optimization</h1>
-        </div>
-        <Button variant="outline" asChild>
-          <Link href={`/team/${teamId}/dashboard`}>Back to dashboard</Link>
-        </Button>
-      </div>
-
+    <PageContainer>
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : (
@@ -648,6 +639,6 @@ export function TeamJdPage({ teamId }: { teamId: string }) {
         title={jdDialog?.modelName ? `Job description · ${jdDialog.modelName}` : "Job description"}
         primary={jdDialog?.text}
       />
-    </div>
+    </PageContainer>
   );
 }

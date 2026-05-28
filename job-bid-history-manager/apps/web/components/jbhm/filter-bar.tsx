@@ -21,19 +21,14 @@ export type FilterState = JobFilters & {
 
 
 type Props = {
-
   filters: FilterState;
-
   allTags: Tag[];
-
   capturedByUsers: string[];
-
   onChange: (next: Partial<FilterState>) => void;
-
   onSearch: () => void;
-
   onClear: () => void;
-
+  /** Hide the long table-header help text (e.g. on analytics page). */
+  compact?: boolean;
 };
 
 
@@ -51,7 +46,7 @@ export function FilterBar({
   onSearch,
 
   onClear,
-
+  compact = false,
 }: Props) {
   const teamTimezone = useTeamTimezone();
 
@@ -91,13 +86,12 @@ export function FilterBar({
 
     <div className="mb-4 space-y-3">
 
-      <p className="text-xs text-muted-foreground">
-
-        In the table header: <strong>filter</strong> (checkbox values), <strong>sort</strong>{" "}
-        (click: ascending → descending → off), and <strong>search</strong> (text). Tag and date
-        filters below apply to the whole table. Dates use team timezone ({teamTimezone}).
-
-      </p>
+      {!compact ? (
+        <p className="text-xs text-muted-foreground">
+          Use column header controls to filter, sort, and search. Tag and date filters below apply
+          to the jobs table. Dates use team timezone ({teamTimezone}).
+        </p>
+      ) : null}
 
 
 

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { TeamAppLayout } from "@/components/layout/team-app-layout";
 import { TeamLayoutProvider } from "@/components/teams/team-layout-provider";
 import { normalizeTimeZone } from "@/lib/datetime/zoned";
 import { QueryProvider } from "@/providers/query-provider";
@@ -41,7 +42,7 @@ export default async function TeamLayout({ children, params }: Props) {
   return (
     <QueryProvider>
       <TeamLayoutProvider teamId={teamId} timezone={timezone}>
-        {children}
+        <TeamAppLayout teamId={teamId}>{children}</TeamAppLayout>
       </TeamLayoutProvider>
     </QueryProvider>
   );

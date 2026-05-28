@@ -12,24 +12,22 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import type { FilterState } from "@/components/jbhm/filter-bar";
+import { useTeamId } from "@/context/team-context";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import {
+  emptyFilters,
+  loadPersistedFilters,
+  savePersistedFilters,
+} from "@/lib/dashboard/persisted-filters";
 
-export const emptyFilters: FilterState = {
-  tagNames: [],
-  column_search: {},
-  column_in: {},
-  sort: [{ field: "captured_at", dir: "desc" }],
-  captured_by: undefined,
-  date_from: undefined,
-  date_to: undefined,
-  page: 1,
-  page_size: 10,
-};
+export { emptyFilters };
 
 type FiltersContextValue = {
   filters: FilterState;
@@ -48,8 +46,27 @@ type FiltersContextValue = {
 const DashboardFiltersContext = createContext<FiltersContextValue | null>(null);
 
 export function DashboardFiltersProvider({ children }: { children: ReactNode }) {
+  const teamId = useTeamId();
   const [filters, setFilters] = useState<FilterState>(emptyFilters);
+  const [hydrated, setHydrated] = useState(false);
+  const skipNextSaveRef = useRef(true);
   const clearedRef = useState(() => ({ flag: false }))[0];
+
+  useEffect(() => {
+    const stored = loadPersistedFilters(teamId);
+    if (stored) setFilters(stored);
+    setHydrated(true);
+    skipNextSaveRef.current = true;
+  }, [teamId]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+    savePersistedFilters(teamId, filters);
+  }, [teamId, filters, hydrated]);
 
   const debouncedSearch = useDebouncedValue(filters.column_search ?? {}, 350);
 

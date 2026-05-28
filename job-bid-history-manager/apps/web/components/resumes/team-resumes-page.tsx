@@ -1,9 +1,9 @@
 "use client";
 
 import { FileText, Star, Trash2, Upload } from "lucide-react";
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { PageContainer } from "@/components/layout/page-container";
 import { Button } from "@/components/ui/button";
 import {
   deleteLibraryResume,
@@ -78,19 +78,7 @@ export function TeamResumesPage({ teamId }: { teamId: string }) {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Resume library</h1>
-          <p className="text-sm text-muted-foreground">
-            Upload original resumes for ChatGPT optimization. Set one as default.
-          </p>
-        </div>
-        <Button variant="outline" asChild>
-          <Link href={`/team/${teamId}/dashboard`}>Back to dashboard</Link>
-        </Button>
-      </div>
-
+    <PageContainer>
       <div className="flex flex-wrap gap-2">
         <input
           ref={inputRef}
@@ -153,6 +141,6 @@ export function TeamResumesPage({ teamId }: { teamId: string }) {
           ))}
         </ul>
       )}
-    </div>
+    </PageContainer>
   );
 }

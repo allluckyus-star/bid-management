@@ -4,10 +4,10 @@ import { Building2, Calendar, CalendarDays, Trophy, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const cards = [
-  { key: "total_bids" as const, label: "Total Bids", icon: Users },
-  { key: "today_bids" as const, label: "Today's Bids", icon: Calendar },
-  { key: "week_bids" as const, label: "This Week", icon: CalendarDays },
-  { key: "top_bidder" as const, label: "Top Bidder", icon: Trophy, format: (v: string | null) => v ?? "—" },
+  { key: "total_bids" as const, label: "Total jobs", icon: Users },
+  { key: "today_bids" as const, label: "Captured today", icon: Calendar },
+  { key: "week_bids" as const, label: "This week", icon: CalendarDays },
+  { key: "top_bidder" as const, label: "Top bidder", icon: Trophy, format: (v: string | null) => v ?? "—" },
   { key: "total_companies" as const, label: "Companies", icon: Building2 },
 ];
 
@@ -33,7 +33,7 @@ export function DashboardCards({ summary, loading }: Props) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.05, duration: 0.25 }}
           >
-            <Card className="overflow-hidden">
+            <Card className="overflow-hidden border-border/80 shadow-sm transition-shadow hover:shadow-md">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
                   {card.label}
