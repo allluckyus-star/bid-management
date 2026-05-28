@@ -204,7 +204,27 @@ function isValidUsernameFormat(username) {
   return /^[a-z0-9_-]{3,32}$/.test(String(username || "").trim().toLowerCase());
 }
 
-async function captureActiveTab(tabId) {
+async function applyJdFromSelection(field, value) {
+  const settings = await loadExtensionSettings();
+  if (!settings.captureToken) {
+    throw new Error("Add a capture token in extension Settings.");
+  }
+  const status = await getExtensionStatus();
+  if (!status.connected || !status.team_id) {
+    throw new Error(status.error || "Extension not connected.");
+  }
+  await applyJdFromSelection(settings.apiBaseUrl, settings.captureToken, status.team_id, {
+    field,
+    value,
+  });
+  const label = field === "name" ? "Manual JD name set." : "Manual JD text set.";
+  notify("JD source", label);
+  chrome.runtime.sendMessage({ type: "JD_SETTINGS_UPDATED" }).catch(() => {});
+  return { ok: true };
+}
+
+async function captureActiveTab(tabId, options = {}) {
+  const setJdToLatest = options.setJdToLatest === true;
   if (capturingTabIds.has(tabId)) {
     return { ok: false, error: "Capture already in progress." };
   }
@@ -250,7 +270,24 @@ async function captureActiveTab(tabId) {
       await saveActiveOptimization(null);
     }
 
-    notify("Job captured", result.message || "Saved to Job Bid History.");
+    if (setJdToLatest && status.team_id) {
+      try {
+        await patchTeamJdSettings(settings.apiBaseUrl, settings.captureToken, status.team_id, {
+          mode: "latest",
+        });
+        chrome.runtime.sendMessage({ type: "JD_SETTINGS_UPDATED" }).catch(() => {});
+      } catch (jdErr) {
+        notify("Job captured", `${result.message || "Saved."} (JD source not updated: ${jdErr?.message || jdErr})`);
+        return { ok: true, result, jdSourceWarning: jdErr?.message };
+      }
+    }
+
+    notify(
+      "Job captured",
+      setJdToLatest
+        ? `${result.message || "Saved."} JD source set to latest job bid.`
+        : result.message || "Saved to Job Bid History.",
+    );
     return { ok: true, result };
   } catch (err) {
     const msg = err?.message || String(err);
@@ -545,7 +582,7 @@ async function downloadLastExport() {
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== "jbhm-capture" || !tab?.id) return;
-  await captureActiveTab(tab.id);
+  await captureActiveTab(tab.id, { setJdToLatest: true });
 });
 
 chrome.commands.onCommand.addListener(async (command) => {
@@ -601,6 +638,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (type === "GET_EXTENSION_STATUS") {
     getExtensionStatus().then(sendResponse);
+    return true;
+  }
+
+  if (type === "APPLY_JD_FROM_SELECTION") {
+    const field = message.field === "name" ? "name" : message.field === "text" ? "text" : null;
+    if (!field) {
+      sendResponse({ ok: false, error: "Invalid field." });
+      return true;
+    }
+    applyJdFromSelection(field, String(message.value || ""))
+      .then(sendResponse)
+      .catch((err) => sendResponse({ ok: false, error: err?.message || String(err) }));
     return true;
   }
 

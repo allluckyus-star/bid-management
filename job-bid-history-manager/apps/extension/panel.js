@@ -186,6 +186,7 @@ function syncManualSourcesFromView(view) {
   let pasteId = null;
   let uploadId = null;
   let uploadLabel = null;
+  let pasteText = state.jdManualText;
   for (const item of view?.manual_items || []) {
     if (item.source_type === "text" && !pasteId) pasteId = item.id;
     else if (item.source_type !== "text" && !uploadId) {
@@ -194,26 +195,28 @@ function syncManualSourcesFromView(view) {
     }
   }
 
+  const pasteItem = (view?.manual_items || []).find((item) => item.source_type === "text");
+  if (pasteItem) {
+    pasteId = pasteItem.id;
+    pasteText = String(pasteItem.extracted_text ?? "");
+  }
+
   let active = null;
-  let pasteText = state.jdManualText;
-  let selectedLabel = state.jdManualTitleInput;
+  let pasteName = String(pasteItem?.title || pasteItem?.label || "");
   const selected = view?.selected_manual;
   if (view?.selection?.mode === "manual" && selected) {
     active = selected.source_type === "text" ? "paste" : "upload";
-    selectedLabel = String(selected.label || "");
     if (selected.source_type === "text") {
       pasteId = selected.id;
       pasteText = String(selected.extracted_text ?? "");
+      pasteName = String(selected.label || "");
     } else {
       uploadId = selected.id;
       uploadLabel = selected.label;
     }
-  } else if (pasteId) {
-    const pasteItem = (view?.manual_items || []).find((item) => item.id === pasteId);
-    pasteText = String(pasteItem?.extracted_text ?? pasteText);
   }
 
-  return { pasteId, uploadId, uploadLabel, active, pasteText, selectedLabel };
+  return { pasteId, uploadId, uploadLabel, active, pasteText, pasteName };
 }
 
 function modeCardClass(mode) {
@@ -265,7 +268,7 @@ async function loadJdView() {
   const manual = syncManualSourcesFromView(res.data);
   state.jdManualSource = manual.active ?? state.jdManualSource ?? "paste";
   state.jdManualText = manual.pasteText ?? "";
-  state.jdManualTitleInput = manual.selectedLabel ?? state.jdManualTitleInput;
+  state.jdManualTitleInput = manual.pasteName ?? "";
 }
 
 async function loadResumeLibrary() {
@@ -355,12 +358,14 @@ function jdTabHtml() {
     <section class="${modeCardClass("manual")}" data-mode="manual">
       <h2>Manual JD</h2>
       <p class="hint">Paste text or upload a file — same as dashboard JD Source.</p>
-      <label class="label" for="jdManualTitle">Manual JD name (used in DOCX filename)</label>
-      <input id="jdManualTitle" class="input" type="text" maxlength="120" placeholder="e.g. Google - Senior Engineer JD" value="${escapeHtml(state.jdManualTitleInput)}" ${state.jdSaving ? "disabled" : ""} />
       <div class="manual-grid">
         <div class="${manualPaneClass("paste")}" data-manual="paste">
           ${mode === "manual" && state.jdManualSource === "paste" ? '<span class="pane-badge">Selected</span>' : ""}
           <textarea id="jdManualText" class="textarea borderless" placeholder="Paste JD text…" ${state.jdSaving ? "disabled" : ""}>${escapeHtml(state.jdManualText)}</textarea>
+          <div class="manual-pane-footer">
+            <label class="label" for="jdManualTitle">Manual JD name (used for DOCX filename when paste)</label>
+            <input id="jdManualTitle" class="input manual-name-input" type="text" maxlength="120" placeholder="e.g. data-engineer" value="${escapeHtml(state.jdManualTitleInput)}" ${state.jdSaving ? "disabled" : ""} />
+          </div>
         </div>
         <div class="${manualPaneClass("upload")}" data-manual="upload" id="jdUploadZone">
           ${mode === "manual" && state.jdManualSource === "upload" ? '<span class="pane-badge">Selected</span>' : ""}
@@ -576,7 +581,6 @@ async function saveJdSelection() {
             fileBase64: arrayBufferToBase64(buffer),
             fileName: state.jdPendingFile.name,
             mimeType: state.jdPendingFile.type,
-            title: String(state.jdManualTitleInput || "").trim() || undefined,
           });
           if (!res.ok) throw new Error(res.error);
           manualInputId = res.item.id;
@@ -610,7 +614,7 @@ async function saveJdSelection() {
     const manual = syncManualSourcesFromView(state.jdView);
     state.jdManualSource = manual.active ?? state.jdManualSource;
     state.jdManualText = manual.pasteText ?? state.jdManualText;
-    state.jdManualTitleInput = manual.selectedLabel ?? state.jdManualTitleInput;
+    state.jdManualTitleInput = manual.pasteName ?? state.jdManualTitleInput;
     setInlineBanner("JD source saved.", "ok");
   } catch (err) {
     setInlineBanner(err?.message || "Failed to save JD source.", "err");
@@ -647,7 +651,7 @@ function wireTabActions() {
 
   contentEl.querySelectorAll("[data-manual]").forEach((el) => {
     el.addEventListener("click", (e) => {
-      if (e.target.closest("textarea")) return;
+      if (e.target.closest("textarea, input, label")) return;
       selectManualSource(el.getAttribute("data-manual"));
       void renderContent();
     });
@@ -657,6 +661,10 @@ function wireTabActions() {
   const jdManualTitle = document.getElementById("jdManualTitle");
   jdManualTitle?.addEventListener("input", (e) => {
     state.jdManualTitleInput = String(e.target.value || "");
+    selectManualSource("paste");
+  });
+  jdManualTitle?.addEventListener("focus", () => {
+    selectManualSource("paste");
   });
   jdManual?.addEventListener("input", (e) => {
     state.jdManualText = String(e.target.value || "");
@@ -664,7 +672,6 @@ function wireTabActions() {
   });
   jdManual?.addEventListener("focus", () => {
     selectManualSource("paste");
-    void renderContent();
   });
 
   const jdUploadZone = document.getElementById("jdUploadZone");
@@ -982,6 +989,13 @@ async function boot() {
 }
 
 void boot();
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type !== "JD_SETTINGS_UPDATED") return;
+  if (activeTab === "JD" && state.status?.connected) {
+    void loadJdView().then(() => renderContent());
+  }
+});
 
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {

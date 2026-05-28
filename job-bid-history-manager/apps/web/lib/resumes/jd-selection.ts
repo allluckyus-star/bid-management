@@ -27,28 +27,78 @@ async function extractPdfText(bytes: Buffer): Promise<string> {
   }
 }
 
-function deriveManualTitleFromText(text: string): string | null {
-  const lines = String(text || "")
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .slice(0, 20);
-  if (!lines.length) return null;
-
-  const atLine = lines.find((line) => /\s+at\s+/i.test(line) && line.length >= 8);
-  if (atLine) return atLine.slice(0, 120);
-
-  const titled = lines.find((line) => /(engineer|developer|manager|architect|analyst|designer|director|lead)/i.test(line));
-  if (titled) return titled.slice(0, 120);
-
-  return lines[0].slice(0, 120);
-}
-
 export type JdMode = "latest" | "history" | "manual";
 
 export type JdSelectionResolved =
   | { mode: "manual"; jdText: string; jobId: null; label: string }
   | { mode: "latest" | "history"; jdText: string; jobId: string; label: string };
+
+/** Apply browser text selection to team manual paste JD (name or body). */
+export async function applyManualJdFromSelection(input: {
+  teamId: string;
+  userId: string;
+  field: "name" | "text";
+  value: string;
+}) {
+  const value = String(input.value ?? "").trim();
+  if (!value) throw new Error("Selection is empty.");
+
+  const admin = createAdminClient();
+  const { data: existing } = await admin
+    .from("team_jd_manual_inputs")
+    .select("id, extracted_text, title")
+    .eq("team_id", input.teamId)
+    .eq("source_type", "text")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const title =
+    input.field === "name"
+      ? value.slice(0, 120)
+      : String(existing?.title ?? "").trim() || "manual-jd";
+  const extractedText =
+    input.field === "text"
+      ? value.slice(0, 500000)
+      : String(existing?.extracted_text ?? "").trim();
+
+  if (input.field === "text" && !extractedText) {
+    throw new Error("Selection is empty.");
+  }
+
+  let manualInputId = existing?.id ?? null;
+  const rowPayload = {
+    user_id: input.userId,
+    source_type: "text" as const,
+    title,
+    original_filename: null,
+    mime_type: null,
+    storage_path: null,
+    extracted_text: extractedText,
+  };
+
+  if (manualInputId) {
+    const { error } = await admin.from("team_jd_manual_inputs").update(rowPayload).eq("id", manualInputId);
+    if (error) throw new Error(error.message);
+  } else {
+    const { data, error } = await admin
+      .from("team_jd_manual_inputs")
+      .insert({ team_id: input.teamId, ...rowPayload })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    manualInputId = data.id;
+  }
+
+  await upsertTeamJdPreference({
+    teamId: input.teamId,
+    userId: input.userId,
+    mode: "manual",
+    manualInputId,
+  });
+
+  return { ok: true, manual_input_id: manualInputId, field: input.field };
+}
 
 export async function upsertTeamJdPreference(input: {
   teamId: string;
@@ -133,8 +183,7 @@ export async function createManualJdInput(input: {
   }
 
   const normalizedTitle = String(input.title ?? "").trim();
-  const autoTitle = deriveManualTitleFromText(extractedText) || derivedTitleFromFileName || null;
-  const title = normalizedTitle || autoTitle;
+  const title = sourceType === "text" ? normalizedTitle || "manual jd" : derivedTitleFromFileName || "uploaded jd";
 
   const rowPayload = {
     user_id: input.userId,

@@ -174,6 +174,17 @@ async function fetchTeamJdSettings(baseUrl, token, teamId) {
   return text ? JSON.parse(text) : {};
 }
 
+async function applyJdFromSelection(baseUrl, token, teamId, { field, value }) {
+  const res = await fetch(teamApiUrl(baseUrl, teamId, "/jd-settings/apply-selection"), {
+    method: "POST",
+    headers: teamApiHeaders(token),
+    body: JSON.stringify({ field, value }),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(parseApiErrorBody(text, res.status));
+  return text ? JSON.parse(text) : {};
+}
+
 async function patchTeamJdSettings(baseUrl, token, teamId, payload) {
   const res = await fetch(teamApiUrl(baseUrl, teamId, "/jd-settings"), {
     method: "PATCH",

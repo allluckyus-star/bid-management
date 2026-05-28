@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Job Bid History Capture",
-  "version": "0.8.16",
+  "version": "0.8.20",
   "description": "Capture job pages, optimize resumes via ChatGPT, and sync to your team dashboard.",
   "permissions": ["storage", "activeTab", "scripting", "contextMenus", "notifications", "downloads"],
   "options_ui": {
@@ -49,6 +49,17 @@
     {
       "matches": ["<all_urls>"],
       "js": ["panel-host.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "exclude_matches": [
+        "https://chatgpt.com/*",
+        "https://www.chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": ["content-jd-selection.js"],
+      "css": ["content-jd-selection.css"],
       "run_at": "document_idle"
     },
     {

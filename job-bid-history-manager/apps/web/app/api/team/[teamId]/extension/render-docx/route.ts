@@ -56,10 +56,13 @@ export async function POST(request: Request) {
     const docxBuffer = await exportOptimizedResumeToDocxBuffer(parsed.optimized_resume);
 
     const me = await getExtensionMeForUser(userId);
-    const jdLabel = String(body.jd_label ?? "Manual JD").trim() || "Manual JD";
+    const jdLabel = String(body.jd_label ?? "manual-jd")
+      .trim()
+      .replace(/\.(docx|pdf)$/i, "")
+      .replace(/\s+/g, "-") || "manual-jd";
     const filename = buildExportFilename({
       userName: me.display_name || me.email || "Resume",
-      companyName: "Manual",
+      companyName: "",
       jobTitle: jdLabel.slice(0, 80),
     });
 

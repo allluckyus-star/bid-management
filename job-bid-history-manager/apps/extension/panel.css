@@ -368,10 +368,23 @@ body.is-collapsed .panel-header {
 
 .manual-pane {
   position: relative;
+  display: flex;
+  flex-direction: column;
   border-radius: var(--radius);
   border: 1px solid hsl(0 0% 45.1% / 0.4);
-  min-height: 140px;
+  min-height: 180px;
   background: var(--background);
+  overflow: hidden;
+}
+
+.manual-pane-footer {
+  border-top: 1px solid var(--border);
+  padding: 10px 12px;
+}
+
+.manual-name-input {
+  margin-top: 6px;
+  border: 1px solid var(--input);
 }
 
 .manual-pane.selected {
@@ -412,8 +425,9 @@ body.is-collapsed .panel-header {
 
 .textarea.borderless {
   border: 0;
-  border-radius: var(--radius);
+  border-radius: 0;
   min-height: 140px;
+  flex: 1;
 }
 
 .textarea.mono {

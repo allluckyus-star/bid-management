@@ -17,6 +17,8 @@ import { TableColumnHeader } from "@/components/jbhm/table-column-header";
 import { TablePagination } from "@/components/jbhm/table-pagination";
 import { TextPreviewDialog } from "@/components/jbhm/text-preview-dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   createManualJdSource,
   fetchJobJd,
@@ -48,6 +50,7 @@ export function TeamJdPage({ teamId }: { teamId: string }) {
   const [busy, setBusy] = useState(false);
   const [savingSelection, setSavingSelection] = useState(false);
   const [manualText, setManualText] = useState("");
+  const [manualName, setManualName] = useState("");
   const [savedSelection, setSavedSelection] = useState<TeamJdSelectionView["selection"]>(emptySelection);
   const [draftSelection, setDraftSelection] = useState<TeamJdSelectionView["selection"]>(emptySelection);
   const [manualSources, setManualSources] = useState<{
@@ -89,6 +92,15 @@ export function TeamJdPage({ teamId }: { teamId: string }) {
       }
     }
 
+    const pasteItem = v.manual_items.find((item) => item.source_type === "text");
+    if (pasteItem) {
+      pasteId = pasteItem.id;
+      const text = String(pasteItem.extracted_text ?? "");
+      setManualText(text);
+      lastSavedManualTextRef.current = text.trim();
+      setManualName(String(pasteItem.title || pasteItem.label || ""));
+    }
+
     let active: ManualSourceKind | null = null;
     const selected = v.selected_manual;
     if (v.selection.mode === "manual" && selected) {
@@ -98,16 +110,10 @@ export function TeamJdPage({ teamId }: { teamId: string }) {
         const text = String(selected.extracted_text ?? "");
         setManualText(text);
         lastSavedManualTextRef.current = text.trim();
+        setManualName(String(selected.label ?? ""));
       } else {
         uploadId = selected.id;
         uploadLabel = selected.label;
-      }
-    } else if (pasteId) {
-      const pasteItem = v.manual_items.find((item) => item.id === pasteId);
-      const text = String(pasteItem?.extracted_text ?? "");
-      if (text) {
-        setManualText(text);
-        lastSavedManualTextRef.current = text.trim();
       }
     }
 
@@ -246,7 +252,10 @@ export function TeamJdPage({ teamId }: { teamId: string }) {
             notifyLoadError("Paste JD text first.");
             return;
           }
-          const item = await createManualJdSource(teamId, { text: normalized });
+          const item = await createManualJdSource(teamId, {
+            text: normalized,
+            title: String(manualName || "").trim() || "manual-jd",
+          });
           lastSavedManualTextRef.current = normalized;
           manualInputId = item.id;
           setManualSources((prev) => ({ ...prev, pasteId: item.id }));
@@ -452,6 +461,25 @@ export function TeamJdPage({ teamId }: { teamId: string }) {
                   placeholder="Paste JD text..."
                   disabled={busy || savingSelection}
                 />
+                <div className="border-t p-3">
+                  <Label htmlFor="manual-jd-name">Manual JD name (used for DOCX filename when paste)</Label>
+                  <Input
+                    id="manual-jd-name"
+                    value={manualName}
+                    onChange={(e) => {
+                      setManualName(e.target.value);
+                      selectModeFromCard("manual");
+                      selectManualSource("paste");
+                    }}
+                    onFocus={() => {
+                      selectModeFromCard("manual");
+                      selectManualSource("paste");
+                    }}
+                    placeholder="e.g. data-engineer"
+                    disabled={busy || savingSelection}
+                    className="mt-2"
+                  />
+                </div>
               </div>
               <div
                 className="relative"
