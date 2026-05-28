@@ -4,6 +4,8 @@
  * @typedef {object} ExtensionSettings
  * @property {string} captureToken
  * @property {ApiEnvironment} apiEnv
+ * @property {string} username
+ * @property {string|null} usernameValidatedAt
  */
 
 function getApiBaseUrl(apiEnv) {
@@ -40,10 +42,14 @@ async function loadExtensionSettings() {
   const stored = await chrome.storage.local.get({
     captureToken: "",
     apiEnv: JBHM_CONFIG.DEFAULT_ENV,
+    username: "",
+    usernameValidatedAt: null,
   });
   const apiEnv = stored.apiEnv === "local" ? "local" : "production";
   return {
     captureToken: String(stored.captureToken || "").trim(),
+    username: String(stored.username || "").trim().toLowerCase(),
+    usernameValidatedAt: stored.usernameValidatedAt || null,
     apiEnv,
     apiBaseUrl: getApiBaseUrl(apiEnv).replace(/\/$/, ""),
   };
@@ -57,7 +63,38 @@ async function saveExtensionSettings(patch) {
   if (patch.apiEnv !== undefined) {
     next.apiEnv = patch.apiEnv === "local" ? "local" : "production";
   }
+  if (patch.username !== undefined) {
+    next.username = String(patch.username || "").trim().toLowerCase();
+  }
+  if (patch.usernameValidatedAt !== undefined) {
+    next.usernameValidatedAt = patch.usernameValidatedAt || null;
+  }
   await chrome.storage.local.set(next);
+}
+
+async function getUsername() {
+  const { username = "", usernameValidatedAt = null } = await chrome.storage.local.get({
+    username: "",
+    usernameValidatedAt: null,
+  });
+  return {
+    username: String(username || "").trim().toLowerCase(),
+    usernameValidatedAt: usernameValidatedAt || null,
+  };
+}
+
+async function setUsername(username) {
+  await chrome.storage.local.set({
+    username: String(username || "").trim().toLowerCase(),
+  });
+}
+
+async function markUsernameValidated() {
+  await chrome.storage.local.set({ usernameValidatedAt: new Date().toISOString() });
+}
+
+async function clearUsernameValidation() {
+  await chrome.storage.local.set({ usernameValidatedAt: null });
 }
 
 async function loadPromptTemplate() {

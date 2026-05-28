@@ -1,5 +1,5 @@
-import { resolveCapturedByForUser } from "@/lib/auth/extension-identity";
 import { resolveUserIdFromBearer } from "@/lib/auth/extension-token";
+import { resolveValidatedUsernameForToken } from "@/lib/auth/username";
 import { extractJobData } from "@/lib/extraction/extract-job";
 import { jsonWithCors, optionsResponse } from "@/lib/http/cors";
 import { saveCapturedJob } from "@/lib/jobs/save-capture";
@@ -13,7 +13,7 @@ type CaptureBody = {
   source_url?: string;
   page_title?: string;
   captured_at?: string;
-  captured_by?: string;
+  username?: string;
   capture_method?: string;
   extension_version?: string;
 };
@@ -64,7 +64,19 @@ export async function POST(request: Request) {
   const sourceUrl = (body.source_url ?? "").trim();
 
   const admin = createAdminClient();
-  const capturedBy = await resolveCapturedByForUser(admin, tokenUser.userId);
+  const identity = await resolveValidatedUsernameForToken(
+    admin,
+    tokenUser.userId,
+    body.username ?? "",
+  );
+  if (!identity.ok) {
+    const error =
+      identity.status === 400
+        ? "Username is required. Register your username in the web dashboard and add it in extension settings."
+        : identity.error;
+    return jsonWithCors(request, { error }, identity.status);
+  }
+  const capturedBy = identity.username;
 
   const { extraction, modelName, partial } = await extractJobData(
     capturedText,

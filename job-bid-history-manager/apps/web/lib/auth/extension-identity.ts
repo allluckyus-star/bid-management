@@ -33,6 +33,7 @@ export type ExtensionMePayload = {
   team_id: string | null;
   display_name: string | null;
   email: string | null;
+  username: string | null;
   captured_by: string;
 };
 
@@ -40,12 +41,13 @@ export async function getExtensionMeForUser(userId: string): Promise<ExtensionMe
   const admin = createAdminClient();
   const { data: profile } = await admin
     .from("profiles")
-    .select("display_name, email")
+    .select("display_name, email, username")
     .eq("id", userId)
     .maybeSingle();
 
   const display_name = profile?.display_name?.trim() || null;
   const email = profile?.email?.trim() || null;
+  const username = profile?.username?.trim() || null;
   const captured_by = await resolveCapturedByForUser(admin, userId);
 
   let resolvedEmail = email;
@@ -59,6 +61,7 @@ export async function getExtensionMeForUser(userId: string): Promise<ExtensionMe
     team_id: null,
     display_name,
     email: resolvedEmail,
+    username,
     captured_by,
   };
 }

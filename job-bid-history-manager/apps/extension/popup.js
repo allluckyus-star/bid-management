@@ -35,8 +35,8 @@ function send(type, payload = {}) {
   });
 }
 
-function setButtonsEnabled(enabled, connected) {
-  captureBtn.disabled = !enabled || !connected;
+function setButtonsEnabled(enabled, connected, usernameReady) {
+  captureBtn.disabled = !enabled || !connected || !usernameReady;
   promptBtn.disabled = !enabled || !connected;
   downloadBtn.disabled = !enabled || !connected;
 }
@@ -50,6 +50,7 @@ async function updateUI() {
 
   const enabled = localData.enabled !== false;
   const connected = Boolean(status?.connected);
+  const usernameReady = Boolean(status?.username_validated);
 
   promptLocked.value = LOCKED_PROMPT_SUFFIX_PREVIEW;
   if (!promptEditorExpanded || document.activeElement !== promptEditor) {
@@ -62,22 +63,26 @@ async function updateUI() {
     statusCardEl.classList.add("warn");
     statusLabelEl.textContent = "Not configured";
     statusDetailEl.textContent = "Add your capture token in Settings.";
-    setButtonsEnabled(false, false);
+    setButtonsEnabled(false, false, false);
   } else if (connected) {
     statusCardEl.classList.add("ok");
     const who = status.captured_by || status.display_name || status.email || "Connected";
     statusLabelEl.textContent = `Connected as ${who}`;
-    statusDetailEl.textContent = status.team_id
+    const envLine = status.team_id
       ? `Team ${status.team_id.slice(0, 8)}… · ${status.apiEnv === "local" ? "localhost" : "production"}`
       : status.apiEnv === "local"
         ? "Dev: localhost"
         : "Production";
-    setButtonsEnabled(enabled, true);
+    const usernameLine = usernameReady
+      ? `Username: ${status.username}`
+      : "Username missing/unvalidated. Open Settings.";
+    statusDetailEl.textContent = `${envLine} · ${usernameLine}`;
+    setButtonsEnabled(enabled, true, usernameReady);
   } else {
     statusCardEl.classList.add("err");
     statusLabelEl.textContent = "Token invalid";
     statusDetailEl.textContent = status.error || "Check token in Settings.";
-    setButtonsEnabled(false, false);
+    setButtonsEnabled(false, false, false);
   }
 
   if (enabled) {
@@ -88,7 +93,9 @@ async function updateUI() {
 
   hintEl.textContent = enabled
     ? connected
-      ? "1) Capture job page  2) Open ChatGPT  3) ChatGPT Prompt (Alt+W). Select wrong JSON? Select text → GPT button."
+      ? usernameReady
+        ? "1) Capture job page  2) Open ChatGPT  3) ChatGPT Prompt (Alt+W). Select wrong JSON? Select text → GPT button."
+        : "Set and validate your username in Settings."
       : "Add capture token in Settings."
     : "Extension is OFF.";
 }

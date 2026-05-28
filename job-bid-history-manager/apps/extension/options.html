@@ -32,6 +32,25 @@
     </section>
 
     <section class="card">
+      <h2>Capture username</h2>
+      <p class="hint">
+        This username must already be registered in the web dashboard for the Gmail/account that
+        owns this capture token.
+      </p>
+      <label>
+        <span>Username</span>
+        <input
+          id="username"
+          type="text"
+          placeholder="your_name"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </label>
+      <button id="validateUsername" type="button" class="primary">Validate username</button>
+    </section>
+
+    <section class="card">
       <h2>Environment (developers)</h2>
       <p class="hint">Production is the default for all users.</p>
       <div class="env-row">
@@ -53,6 +72,7 @@
 
     <script src="config.js"></script>
     <script src="storage.js"></script>
+    <script src="api.js"></script>
     <script src="options.js"></script>
   </body>
 </html>

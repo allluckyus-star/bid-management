@@ -30,9 +30,30 @@ async function fetchExtensionMe(baseUrl, token) {
 /**
  * @param {string} baseUrl
  * @param {string} token
+ * @param {string} username
+ */
+async function validateExtensionUsername(baseUrl, token, username) {
+  const res = await fetch(`${baseUrl}/api/extension/validate-username`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ username }),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(parseApiErrorBody(text, res.status));
+  }
+  return text ? JSON.parse(text) : {};
+}
+
+/**
+ * @param {string} baseUrl
+ * @param {string} token
  * @param {object} pageData
  */
-async function postCaptureJob(baseUrl, token, pageData) {
+async function postCaptureJob(baseUrl, token, pageData, username) {
   const payload = {
     source_url: pageData.source_url,
     page_title: pageData.page_title,
@@ -40,6 +61,7 @@ async function postCaptureJob(baseUrl, token, pageData) {
     captured_at: new Date().toISOString(),
     extension_version: JBHM_CONFIG.EXTENSION_VERSION,
     capture_method: pageData.capture_method || "document.body.innerText",
+    username: String(username || ""),
   };
 
   const res = await fetch(`${baseUrl}/api/capture/job`, {

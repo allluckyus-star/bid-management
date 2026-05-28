@@ -135,6 +135,10 @@ async function sendToChatGptTab(tabId, message, opts = {}) {
 
 const capturingTabIds = new Set();
 
+function isValidUsernameFormat(username) {
+  return /^[a-z0-9_-]{3,32}$/.test(String(username || "").trim().toLowerCase());
+}
+
 async function captureActiveTab(tabId) {
   if (capturingTabIds.has(tabId)) {
     return { ok: false, error: "Capture already in progress." };
@@ -144,6 +148,10 @@ async function captureActiveTab(tabId) {
   if (!settings.captureToken) {
     notify("Job Bid History", "Open extension Settings and add your capture token.");
     return { ok: false, error: "Not configured" };
+  }
+  if (!settings.username || !settings.usernameValidatedAt || !isValidUsernameFormat(settings.username)) {
+    notify("Job Bid History", "Set and validate your username in extension Settings.");
+    return { ok: false, error: "Username missing or unvalidated. Open Settings and validate it." };
   }
 
   capturingTabIds.add(tabId);
@@ -158,6 +166,7 @@ async function captureActiveTab(tabId) {
       settings.apiBaseUrl,
       settings.captureToken,
       pageData,
+      settings.username,
     );
 
     const status = await getExtensionStatus();
@@ -191,6 +200,11 @@ async function getExtensionStatus() {
   }
   try {
     const me = await fetchExtensionMe(settings.apiBaseUrl, settings.captureToken);
+    const username = settings.username || "";
+    const usernameValid =
+      Boolean(settings.usernameValidatedAt) &&
+      isValidUsernameFormat(username) &&
+      username === String(me.username || "").trim().toLowerCase();
     return {
       configured: true,
       connected: true,
@@ -199,6 +213,10 @@ async function getExtensionStatus() {
       team_id: me.team_id,
       display_name: me.display_name,
       email: me.email,
+      username: username,
+      username_registered: me.username || null,
+      username_validated: usernameValid,
+      username_validated_at: settings.usernameValidatedAt || null,
       captured_by: me.captured_by,
     };
   } catch (err) {

@@ -106,8 +106,9 @@ export function ExtensionTokensPanel() {
         <h2 className="text-lg font-semibold">Capture token</h2>
         <p className="text-sm text-muted-foreground mt-1">
           After installing the extension, open its <strong>Settings</strong>, paste this token once,
-          and use <strong>Test connection</strong>. Production API URL is preconfigured; developers can
-          switch to localhost in Settings only.
+          add your registered <strong>Username</strong>, then run <strong>Validate username</strong> and{" "}
+          <strong>Test connection</strong>. Production API URL is preconfigured; developers can switch
+          to localhost in Settings only.
         </p>
       </div>
 
