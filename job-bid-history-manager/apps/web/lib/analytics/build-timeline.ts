@@ -6,6 +6,10 @@ import {
   jobTimestampInRange,
 } from "@/lib/analytics/timeline-buckets";
 import { DEFAULT_TEAM_TIMEZONE, normalizeTimeZone } from "@/lib/datetime/zoned";
+import {
+  capTimelineLoadRange,
+  MAX_LOAD_BUCKETS,
+} from "@/lib/jbhm/timeline-window";
 
 export type TimelineJobRow = {
   captured_at: string;
@@ -47,8 +51,13 @@ export function buildTimelineFromRows(
             86400000,
       );
 
-  const startIso = startDt.toISOString();
-  const endIso = endDt.toISOString();
+  const capped = capTimelineLoadRange(
+    { start: startDt.toISOString(), end: endDt.toISOString() },
+    bucket,
+    tz,
+  );
+  const startIso = capped.start;
+  const endIso = capped.end;
 
   const rows = allRows.filter((r) => jobTimestampInRange(r.captured_at, startIso, endIso));
 
@@ -59,9 +68,12 @@ export function buildTimelineFromRows(
   const slotSet = new Set<string>();
   let cur = floorBucket(startIso, bucket, tz);
   const endSlot = floorBucket(endIso, bucket, tz);
-  while (cur <= endSlot) {
+  const maxSlots = MAX_LOAD_BUCKETS[bucket];
+  let slotCount = 0;
+  while (cur <= endSlot && slotCount < maxSlots) {
     slotSet.add(cur);
     cur = addBucket(cur, bucket, tz);
+    slotCount++;
   }
 
   const counts = new Map<string, number>();

@@ -5,7 +5,7 @@ import { buildTimeline } from "@/lib/analytics/timeline";
 import { parseJobFiltersFromSearchParams } from "@/lib/jobs/query-params";
 import type { TimelineBucketKey } from "@jbhm/shared";
 
-const TIMELINE_TIMEOUT_MS = 20_000;
+const TIMELINE_TIMEOUT_MS = 45_000;
 
 const VALID_BUCKETS = new Set<TimelineBucketKey>(["1h", "1d", "1month"]);
 

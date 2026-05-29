@@ -14,6 +14,7 @@ import {
 import {
   canPanNewer,
   canPanOlder,
+  capTimelineLoadRange,
   dataAwareInitialRange,
   initialRange,
   parseHistoryBounds,
@@ -744,7 +745,8 @@ export function TimelineChart({
     const bounds = parseHistoryBounds(data.history_start, data.history_end);
     historyBoundsRef.current = bounds;
     pendingResetRef.current = true;
-    onRequestRange(bucket, dataAwareInitialRange(bucket, bounds, tz), { resetView: true });
+    const full = dataAwareInitialRange(bucket, bounds, tz);
+    onRequestRange(bucket, capTimelineLoadRange(full, bucket, tz), { resetView: true });
   }, [data, bucket, onRequestRange, tz]);
 
   useEffect(() => {
@@ -994,7 +996,7 @@ export function TimelineChart({
         tz,
       );
 
-      onRequestRange(b, range, { preserveVisible });
+      onRequestRange(b, capTimelineLoadRange(range, b, tz), { preserveVisible });
     },
     [onRequestRange, tz],
   );
@@ -1083,7 +1085,11 @@ export function TimelineChart({
                 pendingResetRef.current = true;
                 onRequestRange(
                   b.key,
-                  dataAwareInitialRange(b.key, historyBoundsRef.current, tz),
+                  capTimelineLoadRange(
+                    dataAwareInitialRange(b.key, historyBoundsRef.current, tz),
+                    b.key,
+                    tz,
+                  ),
                   { resetView: true },
                 );
               }}

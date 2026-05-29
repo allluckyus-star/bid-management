@@ -238,7 +238,7 @@ export async function fetchTimeline(
     "timeline fetch",
     `/api/analytics/timeline${teamQs(teamId, q)}`,
     undefined,
-    25_000,
+    45_000,
   );
 }
 

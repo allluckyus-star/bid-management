@@ -199,6 +199,49 @@ export function shiftLoadedRange(
   return toRange(newStartMs, newEndMs);
 }
 
+/** Max chart load window per bucket (keeps API responses bounded on large teams). */
+export const MAX_LOAD_BUCKETS: Record<TimelineBucketKey, number> = {
+  "5m": 576,
+  "30m": 336,
+  "1h": 168,
+  "1d": 120,
+  "1month": 36,
+};
+
+/** Trim an oversized range to the most recent buckets (pan older loads more). */
+export function capTimelineLoadRange(
+  range: TimeRange,
+  bucket: TimelineBucketKey,
+  timeZone: string = DEFAULT_TEAM_TIMEZONE,
+): TimeRange {
+  const tz = normalizeTimeZone(timeZone);
+  const maxBuckets = MAX_LOAD_BUCKETS[bucket];
+  let cur = floorBucketMs(new Date(range.end).getTime(), bucket, tz);
+  const targetStart = floorBucketMs(new Date(range.start).getTime(), bucket, tz);
+  let count = 0;
+  let oldest = cur;
+  while (count < maxBuckets) {
+    oldest = cur;
+    if (cur <= targetStart) break;
+    count++;
+    if (bucket === "1month") {
+      cur = addZonedMonths(cur, -1, tz);
+    } else if (bucket === "1d") {
+      cur -= DAY_MS;
+    } else if (bucket === "1h") {
+      cur -= 3600000;
+    } else if (bucket === "30m") {
+      cur -= 30 * 60 * 1000;
+    } else {
+      cur -= 5 * 60 * 1000;
+    }
+  }
+  const startMs = Math.max(targetStart, oldest);
+  const endMs = new Date(range.end).getTime();
+  if (startMs >= endMs) return range;
+  return toRange(startMs, endMs);
+}
+
 export function parseHistoryBounds(
   historyStart?: string | null,
   historyEnd?: string | null,
