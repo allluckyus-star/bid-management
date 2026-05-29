@@ -19,12 +19,87 @@ function formatLocalDateYmd(date = new Date()) {
 }
 
 /**
- * @param {{ display_name?: string | null, email?: string | null, captured_by?: string | null }} me
+ * @param {{ display_name?: string | null, email?: string | null, captured_by?: string | null, username?: string | null }} me
  */
 function buildDownloadSubfolder(me) {
   const fromEmail = me?.email ? String(me.email).split("@")[0] : "";
-  const user = me?.display_name?.trim() || fromEmail.trim() || me?.captured_by?.trim() || "User";
+  const user =
+    me?.username?.trim() ||
+    me?.captured_by?.trim() ||
+    me?.display_name?.trim() ||
+    fromEmail.trim() ||
+    "User";
   return `${sanitizeDownloadFolderUser(user)}-${formatLocalDateYmd()}`;
+}
+
+function sanitizeFilenameSegment(value, maxLen = 88) {
+  let raw = String(value ?? "")
+    .replace(/\r/g, " ")
+    .replace(/\n/g, " ")
+    .split(/\s+/)
+    .join(" ")
+    .trim();
+  raw = raw.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_");
+  raw = raw.replace(/\s+/g, " ").trim();
+  if (!raw || raw === "-") return "";
+  return raw.slice(0, maxLen);
+}
+
+/** Subfolder per job: "Company-Role" (e.g. "CreatorIQ-ML Engineer"). */
+function buildResumeJobSubfolder(companyName, jobTitle) {
+  const company = sanitizeFilenameSegment(companyName);
+  const role = sanitizeFilenameSegment(jobTitle);
+  const parts = [company, role].filter(Boolean);
+  if (!parts.length) return "job";
+  return sanitizeFilenameSegment(parts.join("-")) || "job";
+}
+
+/** First plausible full name near the top of pasted resume text. */
+function guessNameFromResumeText(text) {
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  for (const line of lines.slice(0, 10)) {
+    if (line.length < 3 || line.length > 60) continue;
+    if (/^(experience|education|skills|summary|profile|contact|phone|email|linkedin|work history)/i.test(line)) {
+      continue;
+    }
+    if (/@|https?:|^\+?\d|[|]/.test(line)) continue;
+    if (/^[A-Za-z][A-Za-z.'-]+(?:\s+[A-Za-z][A-Za-z.'-]+){1,3}$/.test(line)) return line;
+  }
+  return "";
+}
+
+/**
+ * Resume file name = the name written in the optimized resume (NOT the account
+ * username/email). Falls back to a name guessed from the local resume text.
+ */
+function resolveResumeFileName(opts = {}) {
+  return (
+    sanitizeFilenameSegment(opts.userName) ||
+    guessNameFromResumeText(opts.resumeText) ||
+    "Resume"
+  );
+}
+
+/**
+ * Relative path under the Downloads folder (what the downloads API expects):
+ *   username-YYYY-MM-DD/Company-Role/Resume Name.docx
+ */
+function buildResumeRelativePath(me, opts = {}) {
+  const folder = buildDownloadSubfolder(me);
+  const sub = buildResumeJobSubfolder(opts.companyName, opts.jobTitle);
+  const name = resolveResumeFileName(opts);
+  return `${folder}/${sub}/${name}.docx`;
+}
+
+/**
+ * Human-readable path shown in the Preview tab (Downloads-rooted):
+ *   Downloads/username-YYYY-MM-DD/Company-Role/Resume Name.docx
+ */
+function buildResumeDownloadPath(me, opts = {}) {
+  return `Downloads/${buildResumeRelativePath(me, opts)}`;
 }
 
 /**

@@ -2,46 +2,105 @@
   position: fixed;
   z-index: 2147483645;
   display: none;
-  gap: 0;
-  border-radius: 8px;
-  border: 1px solid #4f46e5;
-  background: #4f46e5;
-  box-shadow: 0 6px 18px rgba(79, 70, 229, 0.4);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  overflow: hidden;
 }
 
 #jbhm-jd-selection-toolbar.jbhm-visible {
-  display: flex;
+  display: block;
+  animation: jbhm-pop 0.16s ease-out;
+}
+
+@keyframes jbhm-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 #jbhm-jd-selection-toolbar button {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  border: 0;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
   margin: 0;
-  padding: 7px 11px;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.2;
+  border: 0;
+  border-radius: 10px;
   cursor: pointer;
   color: #fff;
-  background: transparent;
-  white-space: nowrap;
+  background: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%);
+  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.45);
+  overflow: visible;
+  animation: jbhm-float 2.4s ease-in-out infinite;
+}
+
+@keyframes jbhm-float {
+  0%,
+  100% {
+    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.45);
+    transform: translateY(0);
+  }
+  50% {
+    box-shadow: 0 10px 22px rgba(124, 58, 237, 0.6);
+    transform: translateY(-1.5px);
+  }
 }
 
 #jbhm-jd-selection-toolbar button .jbhm-ico {
-  font-size: 13px;
+  width: 18px;
+  height: 18px;
+  display: block;
+  animation: jbhm-ico-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes jbhm-ico-pulse {
+  0%,
+  100% {
+    transform: scale(1) translateX(0);
+    opacity: 0.95;
+  }
+  50% {
+    transform: scale(1.12) translateX(1px);
+    opacity: 1;
+  }
+}
+
+/* Glowing halo ring that radiates outward */
+#jbhm-jd-selection-toolbar button .jbhm-spark {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  pointer-events: none;
+  box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.55);
+  animation: jbhm-ring 1.8s ease-out infinite;
+}
+
+@keyframes jbhm-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 9px rgba(124, 58, 237, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(124, 58, 237, 0);
+  }
 }
 
 #jbhm-jd-selection-toolbar button:hover {
-  background: rgba(255, 255, 255, 0.14);
+  filter: brightness(1.08);
 }
 
 #jbhm-jd-selection-toolbar button:disabled {
-  opacity: 0.6;
+  opacity: 0.7;
   cursor: wait;
+  animation: none;
 }
 
 #jbhm-jd-selection-toast {

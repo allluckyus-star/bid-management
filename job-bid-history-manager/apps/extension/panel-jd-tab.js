@@ -41,7 +41,7 @@ function jdSourceTabHtml() {
         placeholder="Paste or type job description…"
         ${d.loading ? "disabled" : ""}
       >${escapeHtml(d.text)}</textarea>
-      <input type="file" id="jdFileInput" accept=".txt,.md,.docx,text/plain" hidden />
+      <input type="file" id="jdFileInput" accept=".txt,.md,.docx,.pdf,text/plain" hidden />
       <button type="button" class="btn upload-block-btn" id="jdUploadBtn" ${d.loading ? "disabled" : ""}>
         ${d.loading ? "Loading…" : "Upload file"}
       </button>
@@ -94,27 +94,8 @@ async function getEffectiveJdText() {
 }
 
 async function readJdUploadFile(file) {
-  const name = file.name.toLowerCase();
-  if (name.endsWith(".txt") || name.endsWith(".md") || file.type.startsWith("text/")) {
-    return await file.text();
-  }
-  if (name.endsWith(".docx")) {
-    const buffer = await file.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-    const chunkSize = 0x8000;
-    let binary = "";
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-    }
-    const res = await panelApi("CREATE_MANUAL_JD", {
-      fileBase64: btoa(binary),
-      fileName: file.name,
-      mimeType: file.type,
-    });
-    if (!res.ok) throw new Error(res.error);
-    return String(res.item?.extracted_text || "");
-  }
-  throw new Error("Use .txt, .md, or .docx");
+  // .docx / .pdf parsed server-side (stateless, no DB write); kept local until accept.
+  return await readUploadedFileText(file);
 }
 
 function applyPageDataToJdLocal(pageData) {

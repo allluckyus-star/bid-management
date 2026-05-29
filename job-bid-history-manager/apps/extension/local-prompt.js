@@ -7,36 +7,22 @@ function normalizePromptText(text) {
 }
 
 /**
- * @param {{ template?: string, jdText?: string, jobTitle?: string, company?: string, resumeLabel?: string, username?: string }} opts
+ * Build the final prompt by substituting the real JD and resume text into the
+ * {jd_text} / {resume_text} placeholders inside the locked suffix (not appending).
+ * @param {{ template?: string, jdText?: string, resumeText?: string }} opts
  */
 function buildLocalChatGptPrompt(opts = {}) {
   const template = normalizePromptText(opts.template || DEFAULT_PROMPT_TEMPLATE);
-  const jdText = normalizePromptText(opts.jdText || "");
-  const jobTitle = normalizePromptText(opts.jobTitle || "");
-  const company = normalizePromptText(opts.company || "");
-  const resumeLabel = normalizePromptText(opts.resumeLabel || "your default resume");
-  const username = normalizePromptText(opts.username || "");
+  const jdText = normalizePromptText(opts.jdText || "") || "(no job description provided)";
+  const resumeText = normalizePromptText(opts.resumeText || "") || "(no resume provided)";
 
-  const header = [
-    template,
-    "",
-    "---",
-    "TARGET JOB (reviewed in extension)",
-    jobTitle ? `Job title: ${jobTitle}` : "",
-    company ? `Company: ${company}` : "",
-    username ? `Bidder: ${username}` : "",
-    `Resume to optimize: ${resumeLabel}`,
-    "",
-    "<JOB_DESCRIPTION>",
-    jdText || "(paste or capture JD text in the Capture tab)",
-    "</JOB_DESCRIPTION>",
-    "",
-    LOCKED_PROMPT_SUFFIX_PREVIEW,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const combined = [template, "", LOCKED_PROMPT_SUFFIX_PREVIEW].join("\n");
 
-  return header;
+  return combined
+    .split("{jd_text}")
+    .join(jdText)
+    .split("{resume_text}")
+    .join(resumeText);
 }
 
 function promptCharCount(text) {

@@ -135,6 +135,35 @@ async function postExtractJob(baseUrl, token, pageData) {
 }
 
 /**
+ * Stateless .docx/.pdf → text extraction (resume + JD). Server stores nothing.
+ * @param {string} baseUrl
+ * @param {string} token
+ * @param {{ fileBase64: string, fileName: string, mimeType?: string }} fileData
+ */
+async function postExtractDoc(baseUrl, token, fileData) {
+  const route = "extension/extract-doc";
+  const startedAt = Date.now();
+  const res = await fetch(`${baseUrl}/api/extension/extract-doc`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      file_base64: fileData?.fileBase64 || "",
+      file_name: fileData?.fileName || "",
+      mime_type: fileData?.mimeType || "",
+    }),
+  });
+  const text = await res.text();
+  debugNetwork(route, startedAt, { success: res.ok, status: res.status });
+  if (!res.ok) {
+    throw new Error(parseApiErrorBody(text, res.status));
+  }
+  return text ? JSON.parse(text) : {};
+}
+
+/**
  * Build prompt from server using user's editable prefix + latest/default resume + job JD.
  * @param {string} baseUrl
  * @param {string} token

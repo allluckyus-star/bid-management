@@ -72,11 +72,45 @@ function ensureJbhmStyles() {
     }
     .jbhm-fab:hover { background: var(--jbhm-blue-hover); }
     .jbhm-fab:active { transform: translateY(8px) scale(0.68); }
-    .jbhm-fab[data-variant="gpt"] { background: var(--jbhm-purple); }
-    .jbhm-fab[data-variant="gpt"]:hover { background: var(--jbhm-purple-hover); }
+    .jbhm-fab[data-variant="gpt"] {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      border-color: rgba(255,255,255,0.28);
+      background: linear-gradient(135deg, #a855f7 0%, #6366f1 55%, #4f46e5 100%);
+      box-shadow: 0 10px 26px rgba(99,102,241,0.45);
+    }
+    .jbhm-fab[data-variant="gpt"]:hover {
+      background: linear-gradient(135deg, #9333ea 0%, #4f46e5 55%, #4338ca 100%);
+    }
+    .jbhm-fab[data-variant="gpt"]::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 12px;
+      box-shadow: 0 0 0 0 rgba(139,92,246,0.55);
+      animation: jbhm-gpt-ring 1.8s ease-out infinite;
+      pointer-events: none;
+    }
+    .jbhm-fab[data-variant="gpt"] svg {
+      animation: jbhm-gpt-spark 1.9s ease-in-out infinite;
+      transform-origin: center;
+    }
     .jbhm-fab[data-variant="busy"] { background: #1e40af; }
+    .jbhm-fab[data-variant="busy"]::after,
+    .jbhm-fab[data-variant="ok"]::after,
+    .jbhm-fab[data-variant="err"]::after { animation: none; box-shadow: none; }
     .jbhm-fab[data-variant="ok"] { background: var(--jbhm-green); }
     .jbhm-fab[data-variant="err"] { background: var(--jbhm-red); }
+    @keyframes jbhm-gpt-ring {
+      0% { box-shadow: 0 0 0 0 rgba(139,92,246,0.55); }
+      70% { box-shadow: 0 0 0 12px rgba(139,92,246,0); }
+      100% { box-shadow: 0 0 0 0 rgba(139,92,246,0); }
+    }
+    @keyframes jbhm-gpt-spark {
+      0%, 100% { transform: scale(1) rotate(0deg); }
+      50% { transform: scale(1.16) rotate(8deg); }
+    }
   `;
   document.documentElement.appendChild(style);
 }
@@ -165,14 +199,12 @@ function handleClick(e) {
   if (isChatGPTPage()) {
     const copyControl = getCopyControl(e);
     if (copyControl) {
+      // Clicking ChatGPT's own Copy button must NOT send to the extension.
+      // Remember the message text only; the user sends via the floating button.
       const copiedText = extractChatGptMessageText(copyControl);
       if (copiedText) {
         lastCopiedText = copiedText;
         lastCopyTriggerAt = Date.now();
-        sendGptResultText(copiedText, "click-copy");
-      } else if (isUsableSelection(lastCopiedText)) {
-        lastCopyTriggerAt = Date.now();
-        sendGptResultText(lastCopiedText, "click-copy-fallback");
       }
       return;
     }
@@ -208,13 +240,12 @@ function getControlAnchorPoint(control, event) {
 }
 
 function handleCopy() {
+  // Copy must NOT auto-send to the extension. Only remember the text and show
+  // the floating button so the user can explicitly choose to send.
   const copied = getCombinedSelectedText();
   if (isUsableSelection(copied)) {
     lastCopiedText = copied;
     lastCopyTriggerAt = Date.now();
-    if (isChatGPTPage()) {
-      sendGptResultText(copied, "native-copy");
-    }
   }
   window.setTimeout(showButtonsFromSelection, 0);
 }
@@ -528,8 +559,9 @@ function showSelectionButtons(x, y, text) {
   lastToolbarSelectionText = String(text || "");
   removeButtons();
   if (isChatgptDotComPage()) {
+    // Sit just to the right of the cursor/selection, vertically centered on it.
     buttons = [
-      createButton(GPT_BUTTON_ID, x, y, text, "SEND_GPT_RESULT", getGptIcon(), "#7c3aed", "GPT"),
+      createButton(GPT_BUTTON_ID, x + 14, y - 20, text, "SEND_GPT_RESULT", getGptIcon(), "#7c3aed", "GPT"),
     ];
   } else {
     buttons = [
@@ -644,12 +676,7 @@ function createButton(id, x, y, text, messageType, icon, background, label) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "SHOW_TOAST") {
-    showToast(message.text || "", message.variant || "warning");
-    sendResponse({ status: "ok" });
-    return false;
-  }
-
+  // SHOW_TOAST is handled by the shared toast.js content script.
   if (message.type === "CAPTURE_GPT_RESULT") {
     const latest = getLatestAssistantMessageElement();
     if (!latest) {
@@ -1134,6 +1161,10 @@ async function copyText(text) {
 }
 
 function showToast(message, variant = "warning", duration = 4200) {
+  if (typeof window.__jbhmToast === "function") {
+    window.__jbhmToast(message, variant, duration);
+    return;
+  }
   const container = getToastContainer();
   const toast = document.createElement("div");
   const theme = getToastTheme(variant);
@@ -1290,11 +1321,13 @@ function getComRoleIcon() {
   `;
 }
 
-/** Send selection as GPT result (POST /gpt-result) — filled “send”, not document/building. */
+/** Send selection as GPT result — animated AI "sparkle" mark (distinct from the JD send arrow). */
 function getGptIcon() {
   return `
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M12 2.4l1.85 4.55L18.4 8.8l-3.7 3.05 1.15 4.75L12 13.9l-3.85 2.7 1.15-4.75L5.6 8.8l4.55-1.85L12 2.4z"/>
+      <circle cx="19.2" cy="4.8" r="1.35"/>
+      <circle cx="5" cy="18.8" r="1.05"/>
     </svg>
   `;
 }

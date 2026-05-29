@@ -13,6 +13,7 @@
   let hideTimer = null;
   let lastRange = null;
   let pendingSelectionText = "";
+  let lastPointer = null;
 
   function selectedText() {
     const text = String(window.getSelection?.()?.toString?.() || "").trim();
@@ -36,9 +37,11 @@
     toolbar = document.createElement("div");
     toolbar.id = "jbhm-jd-selection-toolbar";
     toolbar.innerHTML = `
-      <button type="button" data-action="extract" title="Extract job info with AI → Preview">
-        <span class="jbhm-ico" aria-hidden="true">✨</span>
-        <span class="jbhm-label">Extract to Preview</span>
+      <button type="button" data-action="extract" title="Extract job info with AI → Preview" aria-label="Extract to Preview">
+        <span class="jbhm-spark" aria-hidden="true"></span>
+        <svg class="jbhm-ico" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M3.4 20.4 21 12 3.4 3.6l.01 6.53L16 12 3.41 13.87z" fill="currentColor"/>
+        </svg>
       </button>
     `;
     document.documentElement.appendChild(toolbar);
@@ -60,6 +63,10 @@
   }
 
   function showToast(message, isError = false) {
+    if (typeof window.__jbhmToast === "function") {
+      window.__jbhmToast(message, isError ? "error" : "info");
+      return;
+    }
     if (!toast) return;
     toast.textContent = message;
     toast.classList.toggle("jbhm-err", isError);
@@ -73,29 +80,37 @@
     toolbar.classList.remove("jbhm-visible");
   }
 
-  function positionToolbar(rect) {
-    if (!toolbar) return;
-    const width = toolbar.offsetWidth || 150;
-    const height = toolbar.offsetHeight || 34;
-    // Place to the LEFT of the selection start, vertically centered on the selection.
-    let left = rect.left - width - 8;
-    if (left < 8) left = rect.right + 8; // not enough room on the left → put on the right
-    let top = rect.top + rect.height / 2 - height / 2;
-    left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
-    top = Math.max(8, Math.min(top, window.innerHeight - height - 8));
+  function positionToolbar(anchor) {
+    if (!toolbar || !anchor) return;
+    const width = toolbar.offsetWidth || 36;
+    const height = toolbar.offsetHeight || 36;
+    const GAP = 10;
+    // Anchor the icon just to the RIGHT of the cursor, vertically centered on it.
+    let left = anchor.x + GAP;
+    let top = anchor.y - height / 2;
+    if (left + width > window.innerWidth - 6) left = anchor.x - width - GAP;
+    left = Math.max(6, Math.min(left, window.innerWidth - width - 6));
+    top = Math.max(6, Math.min(top, window.innerHeight - height - 6));
     toolbar.style.left = `${left}px`;
     toolbar.style.top = `${top}px`;
   }
 
+  function currentAnchor() {
+    if (lastPointer) return lastPointer;
+    const rect = selectionRect();
+    if (rect) return { x: rect.right, y: rect.top + rect.height / 2 };
+    return null;
+  }
+
   function showToolbar() {
     const text = selectedText();
-    const rect = selectionRect();
-    if (!text || !rect) {
+    const anchor = currentAnchor();
+    if (!text || !anchor) {
       hideToolbar();
       return;
     }
     ensureUi();
-    positionToolbar(rect);
+    positionToolbar(anchor);
     toolbar.classList.add("jbhm-visible");
   }
 
@@ -152,23 +167,26 @@
     "mouseup",
     (e) => {
       if (toolbar?.contains(e.target)) return;
+      lastPointer = { x: e.clientX, y: e.clientY };
       scheduleShow();
     },
     true,
   );
 
-  document.addEventListener("keyup", () => scheduleShow());
+  document.addEventListener("keyup", () => {
+    lastPointer = null;
+    scheduleShow();
+  });
 
   document.addEventListener("selectionchange", () => {
     if (!selectedText()) hideToolbar();
   });
 
+  // Cursor-anchored button does not follow scroll; hide it instead.
   window.addEventListener(
     "scroll",
     () => {
-      if (!toolbar?.classList.contains("jbhm-visible") || !lastRange) return;
-      const rect = lastRange.getBoundingClientRect();
-      if (rect.width || rect.height) positionToolbar(rect);
+      if (toolbar?.classList.contains("jbhm-visible")) hideToolbar();
     },
     true,
   );

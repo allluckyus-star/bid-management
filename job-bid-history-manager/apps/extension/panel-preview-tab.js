@@ -56,12 +56,12 @@ function previewTabHtml() {
         <label class="label" for="prevTags">Tags</label>
         <input id="prevTags" class="input" value="${escapeHtml(p.tags)}" placeholder="remote, full-time" />
         <label class="label" for="prevResumePath">Resume path</label>
-        <input id="prevResumePath" class="input" value="${escapeHtml(p.resume_path)}" placeholder="e.g. C:\\resumes\\acme.docx" />
+        <input id="prevResumePath" class="input" value="${escapeHtml(p.resume_path)}" placeholder="Set after ChatGPT builds the resume" />
       </div>
       <label class="label" for="prevNotes">Notes</label>
       <textarea id="prevNotes" class="textarea" style="min-height:56px">${escapeHtml(p.notes)}</textarea>
       <label class="label" for="prevJdText">Job description (extracted)</label>
-      <p class="muted">${jdLen.toLocaleString()} characters · independent from JD Source tab</p>
+      <p class="muted">${jdLen.toLocaleString()} characters</p>
       <textarea id="prevJdText" class="textarea source-editor jd-editor-tall" placeholder="Extracted job description appears here…">${escapeHtml(jdText)}</textarea>
       <button type="button" class="btn primary upload-block-btn" id="previewAcceptBtn" ${canSave ? "" : "disabled"}>
         ${p.saving ? "Saving…" : "Accept & send to dashboard"}
@@ -140,8 +140,11 @@ async function acceptPreviewToDashboard(force = false) {
     await renderContent();
     return;
   }
-  setInlineBanner(res.result?.message || "Accepted result saved to dashboard.", "ok");
+  // Saved to the dashboard — empty the Preview inputs for the next job.
+  state.previewDraft = emptyPreviewDraft();
+  await clearPreviewDraft();
   await renderContent();
+  setInlineBanner(res.result?.message || "Saved to dashboard. Preview cleared.", "ok");
 }
 
 async function loadPreviewFromStorage() {
@@ -150,6 +153,9 @@ async function loadPreviewFromStorage() {
     state.previewDraft = { ...emptyPreviewDraft(), ...stored, saving: false };
   } else {
     state.previewDraft = state.previewDraft || emptyPreviewDraft();
+  }
+  if (!state.resumeLocalText) {
+    state.resumeLocalText = await getLocalResumeText();
   }
 }
 
@@ -164,6 +170,7 @@ function wirePreviewTabActions() {
         void savePreviewDraft(state.previewDraft);
       });
     });
+
   document
     .getElementById("previewAcceptBtn")
     ?.addEventListener("click", () => void acceptPreviewToDashboard(false));

@@ -8,13 +8,46 @@ const CHATGPT_URL_PATTERNS = [
 const HISTORY_KEY = "captureHistory";
 const MAX_CAPTURE_HISTORY = 5;
 
-function notify(title, message) {
-  chrome.notifications.create({
-    type: "basic",
-    iconUrl: "icons/icon128.png",
-    title,
-    message: message.slice(0, 240),
-  });
+const GENERIC_TOAST_TITLES = new Set([
+  "job bid history",
+  "job bid assistant",
+  "chatgpt",
+  "jd source",
+  "manual jd",
+  "download",
+]);
+
+function toastVariantFor(text) {
+  const t = String(text || "").toLowerCase();
+  if (/(fail|error|not saved|disabled|not available|missing|no active|too short|invalid|rejected|could not)/.test(t)) {
+    return "error";
+  }
+  if (/(ready|saved|captured|downloaded|download started|sent|finished|success|updated|done)/.test(t)) {
+    return "success";
+  }
+  return "info";
+}
+
+/** Show an animated top-right web toast on the active tab (replaces system notifications). */
+function notify(title, message = "") {
+  const t = String(title || "").trim();
+  const m = String(message || "").trim();
+  const isGeneric = GENERIC_TOAST_TITLES.has(t.toLowerCase());
+  const text = (!m ? t : isGeneric ? m : `${t}: ${m}`).slice(0, 280);
+  if (!text) return;
+  const variant = toastVariantFor(`${t} ${m}`);
+  try {
+    chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+      void chrome.runtime.lastError;
+      const tab = tabs && tabs[0];
+      if (!tab || tab.id == null) return;
+      chrome.tabs.sendMessage(tab.id, { type: "SHOW_TOAST", text, variant }, () => {
+        void chrome.runtime.lastError;
+      });
+    });
+  } catch {
+    /* tabs API unavailable */
+  }
 }
 
 function setupContextMenu() {
@@ -260,17 +293,20 @@ async function extractAndFillPreview({ tabId, capturedText, sourceUrl, pageTitle
 
   const ex = res?.extraction || {};
   const tags = Array.isArray(ex.tag_names) ? ex.tag_names.filter(Boolean).join(", ") : "";
-  const existing = (await getPreviewDraft()) || {};
-
-  await savePreviewDraft({
+  const previewFields = {
     job_title: dashIfEmpty(ex.job_title),
     company_name: dashIfEmpty(ex.company_name),
     location: dashIfEmpty(ex.location),
     salary_text: dashIfEmpty(ex.salary_text),
     employment_type: dashIfEmpty(ex.employment_type),
     tags: dashIfEmpty(tags),
+  };
+
+  await savePreviewDraft({
+    ...previewFields,
     jd_text: String(ex.cleaned_job_description || text || "").trim() || "-",
-    resume_path: existing.resume_path || "",
+    // Resume path is set only after the resume is generated from the GPT result.
+    resume_path: "",
     notes: "",
     gpt_text: "",
     status: "applied",
@@ -589,11 +625,62 @@ async function runGenerateChatGptPrompt(tabOverride) {
 async function downloadFilenameWithUserFolder(leafFilename) {
   const status = await getExtensionStatus();
   const me = {
+    username: status.username,
     display_name: status.display_name,
     email: status.email,
     captured_by: status.captured_by,
   };
   return resolveDownloadFilename(me, leafFilename);
+}
+
+function parseResumeNameFromGptText(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return "";
+  try {
+    const start = raw.indexOf("{");
+    const end = raw.lastIndexOf("}");
+    if (start < 0 || end <= start) return "";
+    const data = JSON.parse(raw.slice(start, end + 1));
+    const resume = data.optimized_resume || data.optimizedResume || data.resume;
+    return String(resume?.header?.name || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Render the optimized resume DOCX from the GPT result and download it to:
+ *   Downloads/username-YYYY-MM-DD/Company-Role/Resume Name.docx
+ * Returns the Downloads-rooted display path (for the Preview "resume path" field).
+ */
+async function renderAndSaveResumeFromGptText(gptText, previewFields) {
+  const settings = await loadExtensionSettings();
+  if (!settings.captureToken) throw new Error("Add capture token in Settings.");
+  const status = await getExtensionStatus();
+  if (!status.connected) throw new Error(status.error || "Extension not connected.");
+  const teamId = status.team_id;
+  if (!teamId) throw new Error("Extension token has no team.");
+
+  const company = previewFields?.company_name === "-" ? "" : previewFields?.company_name || "";
+  const role = previewFields?.job_title === "-" ? "" : previewFields?.job_title || "";
+
+  const { blob } = await postRenderDocx(settings.apiBaseUrl, settings.captureToken, teamId, gptText, {
+    jd_label: [company, role].filter(Boolean).join(" - ") || "resume",
+  });
+
+  const me = {
+    username: status.username,
+    display_name: status.display_name,
+    email: status.email,
+    captured_by: status.captured_by,
+  };
+  const resumeName = parseResumeNameFromGptText(gptText);
+  const resumeText = await getLocalResumeText();
+  const opts = { userName: resumeName, companyName: company, jobTitle: role, resumeText };
+
+  const relativePath = buildResumeRelativePath(me, opts);
+  await downloadBlobToPath(blob, relativePath);
+  return buildResumeDownloadPath(me, opts);
 }
 
 async function downloadManualDocxFromGptText(text, tabId) {
@@ -636,13 +723,33 @@ async function submitGptResultText(text, opts = {}) {
     await setPreviewCaptureMode(false);
     // Merge GPT result into the existing preview draft so extracted fields are kept.
     const existing = (await getPreviewDraft()) || {};
+    let resume_path = existing.resume_path || "";
+    let resumeError = "";
+    try {
+      // Build the optimized resume DOCX and save it to the per-job folder.
+      resume_path = await renderAndSaveResumeFromGptText(text, existing);
+    } catch (err) {
+      resumeError = err?.message || String(err);
+    }
     await savePreviewDraft({
       ...existing,
       gpt_text: text,
+      resume_path,
     });
-    notify("Preview ready", "ChatGPT result added — review and Accept.");
-    chrome.runtime.sendMessage({ type: "PREVIEW_DRAFT_UPDATED" }).catch(() => {});
-    return { preview: true };
+    if (resumeError) {
+      notify("Resume not saved", resumeError);
+    } else {
+      notify("Resume ready", `Saved to ${resume_path}`);
+    }
+    chrome.runtime
+      .sendMessage({
+        type: "PREVIEW_DRAFT_UPDATED",
+        resumeSaved: !resumeError,
+        resumePath: resume_path,
+        resumeError,
+      })
+      .catch(() => {});
+    return { preview: true, resume_path, resumeError };
   }
 
   const settings = await loadExtensionSettings();
@@ -815,6 +922,27 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     applyJdFromSelection(field, String(message.value || ""), String(message.pageUrl || ""))
       .then(sendResponse)
       .catch((err) => sendResponse({ ok: false, error: err?.message || String(err) }));
+    return true;
+  }
+
+  if (type === "EXTRACT_DOC") {
+    (async () => {
+      try {
+        const settings = await loadExtensionSettings();
+        if (!settings.captureToken) {
+          sendResponse({ ok: false, error: "Add a capture token in Settings." });
+          return;
+        }
+        const out = await postExtractDoc(settings.apiBaseUrl, settings.captureToken, {
+          fileBase64: String(message.fileBase64 || ""),
+          fileName: String(message.fileName || ""),
+          mimeType: String(message.mimeType || ""),
+        });
+        sendResponse({ ok: true, text: String(out?.text || "") });
+      } catch (err) {
+        sendResponse({ ok: false, error: err?.message || String(err) });
+      }
+    })();
     return true;
   }
 

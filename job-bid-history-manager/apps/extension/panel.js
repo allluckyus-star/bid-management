@@ -127,13 +127,20 @@ function setTabsBusy(busy) {
   });
 }
 
+/** Animated top-right web toast. The panel runs in an iframe, so we ask the host page (toast.js). */
 function setInlineBanner(text, type = "warn") {
-  if (activeTab === "JD" || activeTab === "Resume") {
-    state.tabFeedback[activeTab] = text ? { text: String(text), type } : { text: "", type: "" };
-    setPanelStatus("");
-    return;
+  const msg = String(text || "").trim();
+  if (!msg) return;
+  const variant =
+    type === "ok" ? "success" : type === "err" ? "error" : type === "info" ? "info" : "warning";
+  try {
+    window.parent?.postMessage(
+      { source: "jbhm-panel", type: "JBHM_SHOW_TOAST", text: msg, variant },
+      "*",
+    );
+  } catch {
+    /* parent unavailable */
   }
-  setPanelStatus(text, type);
 }
 
 function tabFeedbackHtml(tab) {
@@ -404,10 +411,35 @@ function resumeLocalTabHtml() {
       </div>
       <p class="muted">${text.length.toLocaleString()} characters</p>
       <textarea id="resumeLocalText" class="textarea mono source-editor resume-editor-tall" placeholder="Paste resume text…">${escapeHtml(text)}</textarea>
-      <input type="file" id="resumeFileInput" accept=".txt,.md,text/plain" hidden />
+      <input type="file" id="resumeFileInput" accept=".txt,.md,.docx,.pdf,text/plain" hidden />
       <button type="button" class="btn upload-block-btn" id="resumeUploadBtn">Upload file</button>
     </section>
   `;
+}
+
+/** Read an uploaded file to plain text. .docx/.pdf are parsed server-side (no DB write). */
+async function readUploadedFileText(file) {
+  const name = String(file.name || "").toLowerCase();
+  if (name.endsWith(".txt") || name.endsWith(".md") || (file.type || "").startsWith("text/")) {
+    return await file.text();
+  }
+  if (name.endsWith(".docx") || name.endsWith(".pdf")) {
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    const chunkSize = 0x8000;
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+    }
+    const res = await send("EXTRACT_DOC", {
+      fileBase64: btoa(binary),
+      fileName: file.name,
+      mimeType: file.type,
+    });
+    if (!res?.ok) throw new Error(res?.error || "Could not read file.");
+    return String(res.text || "");
+  }
+  throw new Error("Use .txt, .md, .docx, or .pdf");
 }
 
 async function persistResumeLocal() {
@@ -434,14 +466,16 @@ function wireResumeLocalActions() {
     const file = input.files?.[0];
     input.value = "";
     if (!file) return;
+    setInlineBanner("Reading resume file…", "warn");
     try {
-      const loaded = await file.text();
+      const loaded = String(await readUploadedFileText(file)).trim();
+      if (!loaded) throw new Error("File had no readable text.");
       state.resumeLocalText = loaded;
       await persistResumeLocal();
       setInlineBanner("Resume loaded from file (local only).", "ok");
       await renderContent();
-    } catch {
-      setInlineBanner("Could not read file.", "err");
+    } catch (err) {
+      setInlineBanner(err?.message || "Could not read file.", "err");
     }
   });
 }
@@ -881,15 +915,19 @@ promptSendFooterBtn.addEventListener("click", async () => {
     } else {
       state.promptTemplate = await loadPromptTemplate();
     }
+    // JD source rule: "Use latest job bid" ticked → JD from Preview tab;
+    // otherwise → JD from the JD Source tab.
+    state.resumeLocalText = await getLocalResumeText();
+    const useLatest = state.jdLocal?.useLatestBid === true;
+    const previewJd = String(state.previewDraft?.jd_text || "").trim();
+    const sourceJd = String(state.jdLocal?.text || "").trim();
+    const jdForPrompt = useLatest
+      ? previewJd === "-" ? "" : previewJd
+      : sourceJd;
     const text = buildLocalChatGptPrompt({
       template: state.promptTemplate,
-      jdText: await getEffectiveJdText(),
-      jobTitle: state.jdLocal?.title,
-      company: state.previewDraft?.company_name,
-      resumeLabel: state.resumeLocalText
-        ? `${state.resumeLocalText.length} chars local resume`
-        : "local resume",
-      username: state.status?.username,
+      jdText: jdForPrompt,
+      resumeText: state.resumeLocalText,
     });
     state.localPromptText = text;
     await setPreviewCaptureMode(true);
@@ -949,11 +987,16 @@ async function boot() {
       state.promptTemplate = template;
     }),
   ]);
-  if (await consumeOpenToPreview()) {
+  const openedToPreview = await consumeOpenToPreview();
+  if (openedToPreview) {
     activeTab = "Preview";
   }
   renderTabs();
   await renderContent();
+  // Toast survives the panel just opening (covers the message-listener race).
+  if (openedToPreview) {
+    setInlineBanner("Preview filled from page — review and edit before accepting.", "ok");
+  }
 }
 
 void boot();
@@ -966,7 +1009,15 @@ chrome.runtime.onMessage.addListener((message) => {
         renderTabs();
       }
       await renderContent();
-      setInlineBanner("Preview updated — review and edit before accepting.", "ok");
+      let msg = "Preview filled — review and edit before accepting.";
+      let type = "ok";
+      if (message.resumeError) {
+        msg = `Fields filled, but resume not saved: ${message.resumeError}`;
+        type = "err";
+      } else if (message.resumeSaved) {
+        msg = `Resume saved to ${message.resumePath} — review and Accept.`;
+      }
+      setInlineBanner(msg, type);
     });
   }
 });
