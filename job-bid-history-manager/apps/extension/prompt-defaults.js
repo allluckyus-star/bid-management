@@ -260,6 +260,8 @@ Reply with ONE JSON object only: plain UTF-8 text, valid JSON, no markdown fence
 
 Write concise bullets to keep latency down, but keep the full schema: do not remove whole sections that exist inside <CURRENT_RESUME>.
 
+For each experience item, include "project" (a one-line description of the main project or product the person worked on, e.g. "Internal ML Platform for real-time inference"). Omit "project" only if no meaningful project name can be inferred from the resume or role context.
+
 Facts must come only from the text inside <JOB_DESCRIPTION>...</JOB_DESCRIPTION> and <CURRENT_RESUME>...</CURRENT_RESUME>. Do not invent. Use "" for unknown optional strings.
 
 Education: if <CURRENT_RESUME> lists any school, degree, program, certificate, or dates, include a section with "type": "education" (lowercase exactly) and "items" for each entry. Do not omit education to save space.
@@ -295,6 +297,7 @@ OUTPUT FORMAT
             "company": "Company Name",
             "location": "City, State",
             "duration": "Mon YYYY - Mon YYYY",
+            "project": "Main project or product worked on (one concise line, or omit if not applicable)",
             "bullets": [
               {
                 "text": "Action + system + tools + intent + measurable impact.",

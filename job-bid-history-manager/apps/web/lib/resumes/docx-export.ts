@@ -403,6 +403,20 @@ function bulletParagraph(bullet: unknown): Paragraph | null {
   });
 }
 
+const PROJECT_LABEL_SIZE_PT = 10.5;
+
+function projectLine(project: string): Paragraph | null {
+  const t = str(project);
+  if (!t) return null;
+  return new Paragraph({
+    spacing: paragraphSpacing({ beforePt: 2, afterPt: 4, lineSpacing: LINE_SPACING }),
+    children: [
+      textRun("Project: ", { pt: PROJECT_LABEL_SIZE_PT, bold: true }),
+      textRun(t, { pt: PROJECT_LABEL_SIZE_PT }),
+    ],
+  });
+}
+
 function renderExperience(section: Record<string, unknown> | undefined): Paragraph[] {
   if (!section || !Array.isArray(section.items) || !section.items.length) return [];
   const items = section.items as Array<Record<string, unknown>>;
@@ -413,10 +427,13 @@ function renderExperience(section: Record<string, unknown> | undefined): Paragra
     const company = str(row.company);
     const location = str(row.location);
     const duration = str(row.duration);
+    const project = str(row.project);
     const roleLine = roleDurationLine(role, duration);
     if (roleLine) out.push(roleLine);
     const meta = metaLine([company, location].filter(Boolean).join(" | "));
     if (meta) out.push(meta);
+    const proj = projectLine(project);
+    if (proj) out.push(proj);
     const bullets = Array.isArray(row.bullets) ? row.bullets : [];
     for (const b of bullets) {
       const p = bulletParagraph(b);
