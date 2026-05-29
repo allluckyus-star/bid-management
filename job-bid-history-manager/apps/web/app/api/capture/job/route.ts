@@ -27,6 +27,8 @@ type CaptureBody = ReviewedCaptureFields & {
   capture_method?: string;
   extension_version?: string;
   extraction_source?: string;
+  resume_path?: string;
+  notes?: string;
 };
 
 function syncCaptureExtractionEnabled(): boolean {
@@ -215,6 +217,8 @@ export async function POST(request: Request) {
       extraction,
       modelName,
       promptVersion: PROMPT_VERSION,
+      resumePath: body.resume_path,
+      notes: body.notes,
     });
     jobId = saved.jobId;
   } catch (err) {

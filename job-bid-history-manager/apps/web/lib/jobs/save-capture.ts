@@ -15,6 +15,8 @@ export async function saveCapturedJob(
     extraction: JobExtraction;
     modelName: string;
     promptVersion: string;
+    resumePath?: string;
+    notes?: string;
   },
 ): Promise<{ jobId: string }> {
   const now = new Date().toISOString();
@@ -44,6 +46,7 @@ export async function saveCapturedJob(
       salary_period: salary.salary_period,
       source_url: opts.sourceUrl || null,
       page_title: opts.pageTitle || null,
+      resume_path: opts.resumePath?.trim() || null,
       captured_at: opts.capturedAt,
       created_at: now,
       updated_at: now,
@@ -79,6 +82,16 @@ export async function saveCapturedJob(
     jobId: job.id,
     tagNames: salary.tag_names,
   });
+
+  const noteBody = opts.notes?.trim();
+  if (noteBody) {
+    await admin.from("notes").insert({
+      job_id: job.id,
+      team_id: opts.teamId,
+      user_id: opts.userId,
+      body: noteBody,
+    });
+  }
 
   return { jobId: job.id };
 }

@@ -51,12 +51,12 @@ function previewTabHtml() {
         <input id="prevLocation" class="input" value="${escapeHtml(p.location)}" />
         <label class="label" for="prevSalary">Salary</label>
         <input id="prevSalary" class="input" value="${escapeHtml(p.salary_text)}" />
-        <label class="label" for="prevEmployment">Employment</label>
-        <input id="prevEmployment" class="input" value="${escapeHtml(p.employment_type)}" />
         <label class="label" for="prevTags">Tags</label>
         <input id="prevTags" class="input" value="${escapeHtml(p.tags)}" placeholder="remote, full-time" />
         <label class="label" for="prevResumePath">Resume path</label>
         <input id="prevResumePath" class="input" value="${escapeHtml(p.resume_path)}" placeholder="Set after ChatGPT builds the resume" />
+        <label class="label" for="prevSourceUrl">Source URL</label>
+        <input id="prevSourceUrl" class="input" value="${escapeHtml(p.source_url)}" placeholder="https://… (captured automatically)" />
       </div>
       <label class="label" for="prevNotes">Notes</label>
       <textarea id="prevNotes" class="textarea" style="min-height:56px">${escapeHtml(p.notes)}</textarea>
@@ -74,15 +74,21 @@ function previewTabHtml() {
 function syncPreviewFromInputs(root) {
   const p = state.previewDraft;
   if (!p) return;
-  p.job_title = String(root.querySelector("#prevTitle")?.value || "");
-  p.company_name = String(root.querySelector("#prevCompany")?.value || "");
-  p.location = String(root.querySelector("#prevLocation")?.value || "");
-  p.salary_text = String(root.querySelector("#prevSalary")?.value || "");
-  p.employment_type = String(root.querySelector("#prevEmployment")?.value || "");
-  p.tags = String(root.querySelector("#prevTags")?.value || "");
-  p.resume_path = String(root.querySelector("#prevResumePath")?.value || "");
-  p.notes = String(root.querySelector("#prevNotes")?.value || "");
-  p.jd_text = String(root.querySelector("#prevJdText")?.value || "");
+  // Only sync fields whose inputs are actually rendered (Accept can be triggered
+  // from the footer while another tab is showing — don't wipe the stored draft).
+  const set = (sel, key) => {
+    const el = root?.querySelector(sel);
+    if (el) p[key] = String(el.value || "");
+  };
+  set("#prevTitle", "job_title");
+  set("#prevCompany", "company_name");
+  set("#prevLocation", "location");
+  set("#prevSalary", "salary_text");
+  set("#prevTags", "tags");
+  set("#prevResumePath", "resume_path");
+  set("#prevSourceUrl", "source_url");
+  set("#prevNotes", "notes");
+  set("#prevJdText", "jd_text");
 }
 
 function cleanedPreviewValue(value) {
@@ -162,7 +168,7 @@ async function loadPreviewFromStorage() {
 function wirePreviewTabActions() {
   contentEl
     .querySelectorAll(
-      "#prevTitle, #prevCompany, #prevLocation, #prevSalary, #prevEmployment, #prevTags, #prevResumePath, #prevNotes, #prevJdText",
+      "#prevTitle, #prevCompany, #prevLocation, #prevSalary, #prevTags, #prevResumePath, #prevSourceUrl, #prevNotes, #prevJdText",
     )
     .forEach((el) => {
       el.addEventListener("input", () => {

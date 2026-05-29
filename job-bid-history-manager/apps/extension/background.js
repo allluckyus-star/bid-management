@@ -1188,11 +1188,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (type === "SEND_GPT_RESULT") {
     (async () => {
       try {
-        const previewOnly = message.previewOnly === true || (await isPreviewCaptureMode());
+        // Local-first: every GPT result goes to the Preview tab (builds the optimized
+        // resume DOCX with the new path and fills the resume path), never straight to server.
         const result = await submitGptResultText(String(message.text || ""), {
-          autoDownload: !previewOnly,
-          manualOnly: message.manualOnly === true,
-          previewOnly,
+          autoDownload: false,
+          previewOnly: true,
           tabId: _sender?.tab?.id,
         });
         sendResponse({ status: "ok", result, manual: result?.manual === true, preview: result?.preview === true });

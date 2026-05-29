@@ -9,6 +9,12 @@ Input is visible page text (innerText), plus PAGE_TITLE and SOURCE_URL when prov
 Return ONLY one JSON object. No markdown fences, no explanation.
 Extract only facts explicitly present in the input. Do not guess or infer missing fields.
 
+ANTI-HALLUCINATION (CRITICAL): Use ONLY text that appears in the provided input. NEVER invent, fabricate, or write a
+generic job description, responsibilities, requirements, skills, salary, or company that is not literally present in the
+input. If the input is mostly navigation/menus/marketing and contains little or no real job description, return the
+role-relevant text that IS present, and use "" (or empty arrays) for anything not present — do NOT fill gaps with a
+plausible-sounding template.
+
 JSON schema keys:
 company_name, job_title, location,
 salary_text, salary_min, salary_max, salary_currency, salary_period,
@@ -33,23 +39,41 @@ SALARY RULES:
 
 EMPLOYMENT / WORKPLACE / TAGS:
 - employment_type: "full-time" | "part-time" | "contract" | "internship" | null
-  full-time if full-time/full time/permanent
+  full-time if full-time/full time/permanent/"regular" position type
   part-time if part-time/part time
-  contract if contract/contractor/temporary
+  contract if the ROLE itself is contract/contractor/temporary/fixed-term
   internship if internship/intern
 - workplace_type: "remote" | "hybrid" | "onsite" | null
-  remote if remote; hybrid if hybrid; onsite if onsite/on-site/in office
-- tag_names: array containing ONLY normalized tags from this set (no other tags):
+  remote if fully remote; hybrid if hybrid; onsite if onsite/on-site/in office/in-office
+  Use the job's "Job Designation" / "Workplace" / "Location type" field when present.
+- tag_names: array of normalized tags, ONLY from this exact set (no other values):
   full-time, part-time, contract, internship, remote, hybrid, onsite
+  - Include BOTH the employment tag AND the workplace tag when each is known (e.g. ["full-time","hybrid"]).
+  - There can be MULTIPLE tags. Omit a tag if it is genuinely not stated.
+  - Map "Regular" position type to "full-time". Map "Hybrid" job designation to "hybrid", "In Office" to "onsite", "Remote" to "remote".
+- TAG SAFETY (CRITICAL): derive tags ONLY from words describing the employment relationship or work location.
+  NEVER derive a tag from product names, company descriptions, or unrelated business text.
+  Example: "Contract Lifecycle Management", "contracts", "agreements", "e-signature" must NOT produce the "contract" tag.
+  Only output "contract" when the posting explicitly says the position/role is a contract/contractor/temporary job.
 - Do NOT put skills in tag_names. Skills go in required_skills / nice_to_have_skills only.
 
 cleaned_job_description (CRITICAL):
-- NOT a summary. NOT rewritten in your own words.
-- Extract a subset of the original job posting text only.
-- Preserve original wording, line breaks, section headings, bullets (-, •, *), and numbered lists.
-- Remove only obvious page noise: Apply button, Save, Share, sign in, login, footer, cookie notice, navigation, similar jobs.
-- Keep sections like Responsibilities, Requirements, Qualifications, Benefits, About the role with their bullets intact.
-- Do NOT collapse bullets into one paragraph.
+- NOT a summary. NOT rewritten in your own words. Extract a subset of the original posting text only.
+- Preserve original wording, line breaks, section headings, bullets (-, •, *), and numbered lists. Do NOT collapse bullets into one paragraph.
+- KEEP ONLY content that describes THE ROLE itself:
+  * the role summary / "About the role" / "What you'll do" / role overview
+  * Responsibilities / duties / "what you will do"
+  * Requirements / Qualifications / "What you bring" / "Basic" / "Preferred" / minimum & preferred experience
+  * Required and nice-to-have skills, tools, technologies, and technical stack
+- REMOVE all of the following non-role content entirely:
+  * company overview / "Company Overview" / "About us" / marketing or mission boilerplate
+  * benefits & perks (PTO, paid time off, parental leave, health/medical, retirement/401k, learning/development, bonus, stock/RSU, compassionate leave)
+  * wage transparency / pay-range legal paragraphs (the dollar figures still go to salary_text, but keep the legal prose out of the description)
+  * EEO / equal opportunity / diversity / "Know Your Rights" statements
+  * accommodation notices, privacy notices, "Life at <company>", "Working here"
+  * application instructions ("Apply for this job", "Returning candidate", "Log back in", "Share on your newsfeed", "Need help finding the right job")
+  * navigation menus, product/industry/solution link lists, footer link lists, language/region selectors, social links, "Skip to Main Content"
+- The result should read as: role intro + responsibilities + requirements/qualifications + skills, and nothing else.
 
 Never use Apply/LinkedIn/Indeed as company_name.`;
 

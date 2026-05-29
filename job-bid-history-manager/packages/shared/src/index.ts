@@ -67,6 +67,7 @@ export type JobListItem = {
   updated_at: string;
   tags: Tag[];
   resume: ResumeSummary | null;
+  resume_path: string | null;
   notes_preview: string | null;
   notes: string | null;
   has_jd: boolean;

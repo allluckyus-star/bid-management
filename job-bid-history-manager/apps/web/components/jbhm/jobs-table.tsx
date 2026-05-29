@@ -24,8 +24,6 @@ import { ColumnValueFilterDialog } from "@/components/jbhm/column-value-filter-d
 import { EditableCell } from "@/components/jbhm/editable-cell";
 import { JdCell } from "@/components/jbhm/jd-cell";
 import { NotesCell } from "@/components/jbhm/notes-cell";
-import { ResumeCell } from "@/components/jbhm/resume-cell";
-
 const TextPreviewDialog = dynamic(
   () =>
     import("@/components/jbhm/text-preview-dialog").then((m) => ({
@@ -52,7 +50,7 @@ import {
 import { TableInteractionContext } from "@/context/table-interaction";
 import { useHoldKey } from "@/hooks/use-interaction-hold";
 import { useTeamId, useTeamTimezone } from "@/context/team-context";
-import { fetchJob, fetchJobJd, fetchResumePreview, patchJob } from "@/lib/api/client";
+import { fetchJob, fetchJobJd, patchJob } from "@/lib/api/client";
 import { notifyActionSuccess, notifyLoadError } from "@/lib/jbhm/notify";
 import {
   COLUMN_CONTROLS,
@@ -115,10 +113,6 @@ export function JobsTable({
     modelName: string | null;
   } | null>(null);
   const [notesDialog, setNotesDialog] = useState<{ jobId: string; body: string } | null>(null);
-  const [resumeDialog, setResumeDialog] = useState<{
-    title: string;
-    text: string;
-  } | null>(null);
   const [overlayBusy, setOverlayBusy] = useState(false);
   const [notesSaving, setNotesSaving] = useState(false);
   const [editCell, setEditCell] = useState<TableEditState>(null);
@@ -144,7 +138,6 @@ export function JobsTable({
   useHoldKey(setInteractionHold, "column-search", !!searchField);
   useHoldKey(setInteractionHold, "jd-dialog", !!jdDialog);
   useHoldKey(setInteractionHold, "notes-dialog", !!notesDialog);
-  useHoldKey(setInteractionHold, "resume-dialog", !!resumeDialog);
 
   const saveField = useCallback(
     async (jobId: string, patch: Parameters<typeof patchJob>[2]) => {
@@ -200,22 +193,6 @@ export function JobsTable({
       setNotesSaving(false);
     }
   };
-
-  const openResumePreview = useCallback(async (job: JobListItem) => {
-    if (!job.resume) return;
-    setOverlayBusy(true);
-    try {
-      const text = await fetchResumePreview(teamId, job.resume.id);
-      setResumeDialog({
-        title: `Resume — ${job.resume.original_filename}`,
-        text,
-      });
-    } catch (e) {
-      notifyLoadError(e instanceof Error ? e.message : "Preview failed");
-    } finally {
-      setOverlayBusy(false);
-    }
-  }, [teamId]);
 
   const interactionCtx = useMemo(
     () => ({ setHold: setInteractionHold, interactionHeld }),
@@ -352,18 +329,20 @@ export function JobsTable({
       },
       {
         id: "resume",
-        meta: { align: "center" } satisfies ColumnMeta,
         header: () => colHeader("resume"),
-        cell: ({ row }) => (
-          <div className={centeredWrap}>
-            <ResumeCell
-              job={row.original}
-              busy={overlayBusy}
-              onUpdated={refreshTable}
-              onPreview={openResumePreview}
-            />
-          </div>
-        ),
+        cell: ({ row }) => {
+          const path = row.original.resume_path?.trim();
+          return path ? (
+            <span
+              className="block max-w-[280px] truncate text-xs text-muted-foreground"
+              title={path}
+            >
+              {path}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          );
+        },
       },
       {
         id: "jd",
@@ -634,15 +613,6 @@ export function JobsTable({
           if (!open) setTagsJobId(null);
         }}
         onUpdated={refreshTable}
-      />
-
-      <TextPreviewDialog
-        open={!!resumeDialog}
-        onOpenChange={(open: boolean) => {
-          if (!open) setResumeDialog(null);
-        }}
-        title={resumeDialog?.title ?? "Resume"}
-        primary={resumeDialog?.text}
       />
     </TableInteractionContext.Provider>
     </TableCellEditProvider>

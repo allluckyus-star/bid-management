@@ -17,6 +17,7 @@ type JobRow = {
   salary_currency: string | null;
   source_url: string | null;
   page_title: string | null;
+  resume_path: string | null;
   captured_at: string;
   created_at: string;
   updated_at: string;
@@ -80,6 +81,7 @@ function mapRow(row: JobRow): JobListItem {
           linked_at: resume.uploaded_at,
         }
       : null,
+    resume_path: row.resume_path ?? null,
     notes_preview: notePreview,
     notes: null,
     has_jd: (row.job_descriptions?.length ?? 0) > 0,
@@ -139,6 +141,7 @@ export async function listJobsFromFilters(
       salary_currency,
       source_url,
       page_title,
+      resume_path,
       captured_at,
       created_at,
       updated_at,
@@ -244,6 +247,7 @@ export async function getJobById(jobId: string): Promise<JobListItem | null> {
       salary_currency,
       source_url,
       page_title,
+      resume_path,
       captured_at,
       created_at,
       updated_at,

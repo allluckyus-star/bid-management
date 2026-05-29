@@ -4,7 +4,7 @@ const siteMetaEl = document.getElementById("siteMeta");
 const connBadgeEl = document.getElementById("connBadge");
 const previewTabBtn = document.getElementById("previewTabBtn");
 const promptSendFooterBtn = document.getElementById("promptSendBtn");
-const resumeDownloadBtn = document.getElementById("resumeDownloadBtn");
+const footerAcceptBtn = document.getElementById("footerAcceptBtn");
 
 const TAB_DEFS = [
   { id: "JD", label: "JD Source", icon: "📋" },
@@ -612,6 +612,7 @@ async function renderContent() {
   else if (activeTab === "Settings") contentEl.innerHTML = settingsTabHtml();
   else contentEl.innerHTML = promptTabHtml();
   wireTabActions();
+  refreshActionBar();
 }
 
 function selectJdMode(mode) {
@@ -950,28 +951,28 @@ promptSendFooterBtn.addEventListener("click", async () => {
   }
 });
 
-resumeDownloadBtn.addEventListener("click", async () => {
-  const prevText = resumeDownloadBtn.textContent;
-  resumeDownloadBtn.disabled = true;
-  resumeDownloadBtn.textContent = "Preparing…";
-  try {
+// Footer Accept — same action as the Preview tab's Accept button.
+footerAcceptBtn.addEventListener("click", async () => {
+  if (activeTab !== "Preview") {
+    activeTab = "Preview";
+    await switchTab();
+  } else {
     await loadPreviewFromStorage();
-    const text = state.previewDraft?.gpt_text || "";
-    const res = text.trim()
-      ? await send("RENDER_PREVIEW_DOCX", {
-          text,
-          jd_label: state.jdLocal?.title || state.previewDraft?.job_title || "resume",
-        })
-      : await send("DOWNLOAD_EXPORT");
-    setInlineBanner(
-      res?.status === "ok" ? "Download started." : res?.detail || res?.error || "Download failed.",
-      res?.status === "ok" ? "ok" : "err",
-    );
-  } finally {
-    resumeDownloadBtn.disabled = false;
-    resumeDownloadBtn.textContent = prevText || "DOCX";
   }
+  await acceptPreviewToDashboard(false);
 });
+
+/** Keep the footer Accept button enabled only when a GPT result is ready (mirrors Preview). */
+function refreshActionBar() {
+  if (!footerAcceptBtn) return;
+  const p = state.previewDraft;
+  const hasGpt = String(p?.gpt_text || "").trim().length > 0;
+  const ready = hasGpt && state.status?.username_validated === true && state.status?.connected !== false;
+  footerAcceptBtn.disabled = !ready;
+  footerAcceptBtn.title = ready
+    ? "Accept & send to dashboard"
+    : "Build the ChatGPT result first, then Accept";
+}
 
 async function boot() {
   showTabLoading("Connecting…");
