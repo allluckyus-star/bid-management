@@ -24,6 +24,7 @@ import { ColumnValueFilterDialog } from "@/components/jbhm/column-value-filter-d
 import { EditableCell } from "@/components/jbhm/editable-cell";
 import { JdCell } from "@/components/jbhm/jd-cell";
 import { NotesCell } from "@/components/jbhm/notes-cell";
+import { ResumeCell } from "@/components/jbhm/resume-cell";
 const TextPreviewDialog = dynamic(
   () =>
     import("@/components/jbhm/text-preview-dialog").then((m) => ({
@@ -50,7 +51,7 @@ import {
 import { TableInteractionContext } from "@/context/table-interaction";
 import { useHoldKey } from "@/hooks/use-interaction-hold";
 import { useTeamId, useTeamTimezone } from "@/context/team-context";
-import { fetchJob, fetchJobJd, patchJob } from "@/lib/api/client";
+import { fetchJob, fetchJobJd, fetchResumePreview, patchJob } from "@/lib/api/client";
 import { notifyActionSuccess, notifyLoadError } from "@/lib/jbhm/notify";
 import {
   COLUMN_CONTROLS,
@@ -117,6 +118,10 @@ export function JobsTable({
   const [notesSaving, setNotesSaving] = useState(false);
   const [editCell, setEditCell] = useState<TableEditState>(null);
   const [tagsJobId, setTagsJobId] = useState<string | null>(null);
+  const [resumePreview, setResumePreview] = useState<{
+    job: JobListItem;
+    text: string;
+  } | null>(null);
   const onRefreshRef = useRef(onRefresh);
   onRefreshRef.current = onRefresh;
   const refreshTable = useCallback(() => {
@@ -148,6 +153,22 @@ export function JobsTable({
       } catch (e) {
         notifyLoadError(e instanceof Error ? e.message : "Save failed");
         throw e;
+      }
+    },
+    [teamId],
+  );
+
+  const openResumePreview = useCallback(
+    async (job: JobListItem) => {
+      if (!job.resume) return;
+      setOverlayBusy(true);
+      try {
+        const text = await fetchResumePreview(teamId, job.resume.id);
+        setResumePreview({ job, text });
+      } catch (e) {
+        notifyLoadError(e instanceof Error ? e.message : "Failed to load resume preview");
+      } finally {
+        setOverlayBusy(false);
       }
     },
     [teamId],
@@ -330,19 +351,14 @@ export function JobsTable({
       {
         id: "resume",
         header: () => colHeader("resume"),
-        cell: ({ row }) => {
-          const path = row.original.resume_path?.trim();
-          return path ? (
-            <span
-              className="block max-w-[280px] truncate text-xs text-muted-foreground"
-              title={path}
-            >
-              {path}
-            </span>
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          );
-        },
+        cell: ({ row }) => (
+          <ResumeCell
+            job={row.original}
+            busy={overlayBusy || deleteBusy}
+            onUpdated={refreshTable}
+            onPreview={(job) => void openResumePreview(job)}
+          />
+        ),
       },
       {
         id: "jd",
@@ -419,6 +435,7 @@ export function JobsTable({
       saveField,
       openNotes,
       openJd,
+      openResumePreview,
       openTagsDialog,
       refreshTable,
       overlayBusy,
@@ -574,6 +591,19 @@ export function JobsTable({
             : "Job description"
         }
         primary={jdDialog?.text}
+      />
+
+      <TextPreviewDialog
+        open={!!resumePreview}
+        onOpenChange={(open: boolean) => {
+          if (!open) setResumePreview(null);
+        }}
+        title={
+          resumePreview?.job.resume
+            ? `Resume · ${resumePreview.job.resume.original_filename}`
+            : "Resume"
+        }
+        primary={resumePreview?.text ?? null}
       />
 
       <Dialog

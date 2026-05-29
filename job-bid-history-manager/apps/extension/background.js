@@ -558,22 +558,62 @@ async function pasteAndSubmitOnTab(tabId, promptText, autoCapture = true, manual
   }
 }
 
-async function blobToDataUrl(blob) {
-  const bytes = new Uint8Array(await blob.arrayBuffer());
+function isValidDocxBuffer(buffer) {
+  const u8 = new Uint8Array(buffer);
+  // DOCX is a ZIP archive — must start with PK\x03\x04
+  return (
+    u8.length >= 4 &&
+    u8[0] === 0x50 &&
+    u8[1] === 0x4b &&
+    (u8[2] === 0x03 || u8[2] === 0x05 || u8[2] === 0x07) &&
+    (u8[3] === 0x04 || u8[3] === 0x06 || u8[3] === 0x08)
+  );
+}
+
+/** Base64 encode without spread (spread corrupts large DOCX binaries in service workers). */
+function uint8ArrayToBase64(bytes) {
+  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const chunkSize = 0x8000;
   let binary = "";
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
+  for (let i = 0; i < u8.length; i += chunkSize) {
+    const slice = u8.subarray(i, Math.min(i + chunkSize, u8.length));
+    binary += String.fromCharCode.apply(null, slice);
   }
-  const base64 = btoa(binary);
-  const mime = blob.type || "application/octet-stream";
-  return `data:${mime};base64,${base64}`;
+  return btoa(binary);
 }
 
 async function downloadBlobToPath(blob, filename) {
-  // MV3 service workers may not expose URL.createObjectURL reliably.
-  const dataUrl = await blobToDataUrl(blob);
+  const buffer = await blob.arrayBuffer();
+  if (!isValidDocxBuffer(buffer)) {
+    const head = new TextDecoder().decode(new Uint8Array(buffer).slice(0, 240));
+    const hint = head.trimStart().startsWith("{") || head.includes('"error"')
+      ? "Server returned JSON instead of a DOCX file."
+      : "File is not a valid DOCX (ZIP header missing).";
+    throw new Error(`${hint} Check GPT JSON and try again.`);
+  }
+
+  const docxBlob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  });
+
+  // Prefer blob URL — avoids data-URL size limits and base64 corruption.
+  if (typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
+    const objectUrl = URL.createObjectURL(docxBlob);
+    try {
+      await chrome.downloads.download({ url: objectUrl, filename, saveAs: false });
+    } finally {
+      setTimeout(() => {
+        try {
+          URL.revokeObjectURL(objectUrl);
+        } catch {
+          /* ignore */
+        }
+      }, 120_000);
+    }
+    return;
+  }
+
+  const dataUrl = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${uint8ArrayToBase64(new Uint8Array(buffer))}`;
   await chrome.downloads.download({ url: dataUrl, filename, saveAs: false });
 }
 

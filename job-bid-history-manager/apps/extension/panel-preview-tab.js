@@ -53,8 +53,9 @@ function previewTabHtml() {
         <input id="prevSalary" class="input" value="${escapeHtml(p.salary_text)}" />
         <label class="label" for="prevTags">Tags</label>
         <input id="prevTags" class="input" value="${escapeHtml(p.tags)}" placeholder="remote, full-time" />
-        <label class="label" for="prevResumePath">Resume path</label>
-        <input id="prevResumePath" class="input" value="${escapeHtml(p.resume_path)}" placeholder="Set after ChatGPT builds the resume" />
+        <label class="label" for="prevResumePath">Resume path (local download)</label>
+        <input id="prevResumePath" class="input" value="${escapeHtml(p.resume_path)}" placeholder="Filled when DOCX is saved to Downloads" readonly />
+        <p class="hint" style="margin-top:4px">DOCX stays on your PC only. To store a copy on the dashboard, use <strong>Attach to dashboard</strong> in the history table after saving.</p>
         <label class="label" for="prevSourceUrl">Source URL</label>
         <input id="prevSourceUrl" class="input" value="${escapeHtml(p.source_url)}" placeholder="https://… (captured automatically)" />
       </div>

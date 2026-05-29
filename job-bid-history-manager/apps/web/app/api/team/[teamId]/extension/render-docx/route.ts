@@ -54,6 +54,12 @@ export async function POST(request: Request) {
 
     const parsed = parseGptResultText(text);
     const docxBuffer = await exportOptimizedResumeToDocxBuffer(parsed.optimized_resume);
+    if (docxBuffer.length < 4 || docxBuffer[0] !== 0x50 || docxBuffer[1] !== 0x4b) {
+      return new Response(JSON.stringify({ error: "DOCX generation produced an invalid file." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json", ...corsHeaders(request) },
+      });
+    }
 
     const me = await getExtensionMeForUser(userId);
     const jdLabel = String(body.jd_label ?? "manual-jd")

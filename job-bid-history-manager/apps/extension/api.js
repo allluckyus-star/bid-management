@@ -221,7 +221,26 @@ async function postRenderDocx(baseUrl, token, teamId, gptText, opts = {}) {
     throw new Error(parseApiErrorBody(text, res.status));
   }
 
-  const blob = await res.blob();
+  const buffer = await res.arrayBuffer();
+  const u8 = new Uint8Array(buffer);
+  const isZip =
+    u8.length >= 4 &&
+    u8[0] === 0x50 &&
+    u8[1] === 0x4b &&
+    (u8[2] === 0x03 || u8[2] === 0x05) &&
+    (u8[3] === 0x04 || u8[3] === 0x06);
+  if (!isZip) {
+    const preview = new TextDecoder().decode(u8.slice(0, 200));
+    throw new Error(
+      preview.trimStart().startsWith("{")
+        ? `DOCX render failed: ${parseApiErrorBody(preview, res.status)}`
+        : "Server did not return a valid DOCX file.",
+    );
+  }
+
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  });
   const filename =
     res.headers.get("X-JBHM-Filename") ||
     parseFilenameFromContentDisposition(res.headers.get("Content-Disposition")) ||

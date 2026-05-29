@@ -1,22 +1,12 @@
 "use client";
 
 import type { JobListItem } from "@jbhm/shared";
-import { Sparkles } from "lucide-react";
-import { useRef, useState } from "react";
-import { CopyTextButton } from "@/components/jbhm/copy-text-button";
+import { Paperclip } from "lucide-react";
+import { useRef } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { useTeamId } from "@/context/team-context";
 import {
-  createResumeOptimization,
   resumeDownloadUrl,
-  savePendingOptimization,
   unlinkJobResume,
   uploadJobResume,
 } from "@/lib/api/client";
@@ -34,9 +24,7 @@ type Props = {
 export function ResumeCell({ job, busy, onUpdated, onPreview }: Props) {
   const teamId = useTeamId();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [promptOpen, setPromptOpen] = useState(false);
-  const [promptText, setPromptText] = useState("");
-  const [optimizing, setOptimizing] = useState(false);
+  const localPath = job.resume_path?.trim() || "";
 
   const pickFile = () => inputRef.current?.click();
 
@@ -48,7 +36,7 @@ export function ResumeCell({ job, busy, onUpdated, onPreview }: Props) {
     }
     try {
       await uploadJobResume(teamId, job.id, file);
-      notifyActionSuccess("Resume uploaded");
+      notifyActionSuccess("Resume saved to dashboard");
       onUpdated();
     } catch (e) {
       notifyLoadError(e instanceof Error ? e.message : "Upload failed");
@@ -60,10 +48,10 @@ export function ResumeCell({ job, busy, onUpdated, onPreview }: Props) {
   const handleUnlink = async () => {
     try {
       await unlinkJobResume(teamId, job.id);
-      notifyActionSuccess("Resume unlinked");
+      notifyActionSuccess("Dashboard resume removed");
       onUpdated();
     } catch (e) {
-      notifyLoadError(e instanceof Error ? e.message : "Unlink failed");
+      notifyLoadError(e instanceof Error ? e.message : "Remove failed");
     }
   };
 
@@ -84,130 +72,90 @@ export function ResumeCell({ job, busy, onUpdated, onPreview }: Props) {
     }
   };
 
-  const handleGeneratePrompt = async () => {
-    if (!job.has_jd) {
-      notifyLoadError("Capture the job page first so a cleaned JD is available.");
-      return;
-    }
-    setOptimizing(true);
-    try {
-      const result = await createResumeOptimization(teamId, job.id);
-      setPromptText(result.prompt_text);
-      savePendingOptimization({
-        teamId,
-        jobId: job.id,
-        optimizationId: result.optimization_id,
-        promptText: result.prompt_text,
-      });
-      setPromptOpen(true);
-      notifyActionSuccess("Prompt ready — use extension or copy below");
-    } catch (e) {
-      notifyLoadError(e instanceof Error ? e.message : "Could not create prompt");
-    } finally {
-      setOptimizing(false);
-    }
-  };
-
   return (
-    <>
-      <div className="flex flex-col items-center gap-1">
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-          className="hidden"
-          onChange={(e) => void handleFile(e.target.files?.[0])}
-        />
+    <div className="flex max-w-[280px] flex-col items-start gap-1.5">
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        className="hidden"
+        onChange={(e) => void handleFile(e.target.files?.[0])}
+      />
 
+      {localPath ? (
+        <p
+          className="w-full truncate text-[11px] leading-snug text-muted-foreground"
+          title={localPath}
+        >
+          <span className="font-medium text-foreground/80">Local:</span> {localPath}
+        </p>
+      ) : null}
+
+      {job.resume ? (
+        <>
+          <p className="text-[11px] font-medium text-foreground">
+            Dashboard: {truncate(job.resume.original_filename, 32)}
+          </p>
+          <div className="flex flex-wrap gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-[10px]"
+              disabled={busy}
+              onClick={() => onPreview(job)}
+            >
+              Preview
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-[10px]"
+              disabled={busy}
+              onClick={() => void handleDownload()}
+            >
+              Download
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-[10px]"
+              disabled={busy}
+              onClick={pickFile}
+            >
+              Replace
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-[10px]"
+              disabled={busy}
+              onClick={() => void handleUnlink()}
+            >
+              Remove
+            </Button>
+          </div>
+        </>
+      ) : (
         <Button
-          variant="secondary"
+          variant="outline"
           size="sm"
-          className="h-7 text-[10px]"
-          disabled={busy || optimizing}
-          onClick={() => void handleGeneratePrompt()}
+          className="h-7 text-xs"
+          disabled={busy}
+          onClick={pickFile}
         >
-          <Sparkles className="mr-1 h-3 w-3" />
-          ChatGPT Prompt
+          <Paperclip className="mr-1 h-3 w-3" />
+          Attach to dashboard
         </Button>
+      )}
 
-        {!job.resume ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            disabled={busy}
-            onClick={pickFile}
-          >
-            Attach Resume
-          </Button>
-        ) : (
-          <>
-            <span className="text-center text-xs font-medium">
-              {truncate(job.resume.original_filename, 28)}
-            </span>
-            <div className="flex flex-wrap justify-center gap-1">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-6 px-2 text-[10px]"
-                disabled={busy}
-                onClick={() => onPreview(job)}
-              >
-                Preview
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-6 px-2 text-[10px]"
-                disabled={busy}
-                onClick={() => void handleDownload()}
-              >
-                Download
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-[10px]"
-                disabled={busy}
-                onClick={pickFile}
-              >
-                Replace
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-[10px]"
-                disabled={busy}
-                onClick={() => void handleUnlink()}
-              >
-                Unlink
-              </Button>
-            </div>
-          </>
-        )}
-      </div>
-
-      <Dialog open={promptOpen} onOpenChange={setPromptOpen}>
-        <DialogContent
-          className="max-h-[85vh] max-w-2xl overflow-y-auto"
-          topActions={<CopyTextButton text={promptText} title="Copy prompt" />}
-        >
-          <DialogHeader className="pr-[4.75rem]">
-            <DialogTitle>ChatGPT optimization prompt</DialogTitle>
-            <p className="text-sm text-muted-foreground">
-              Copy this prompt or use the extension: ChatGPT Prompt (Alt+W) → auto capture.
-            </p>
-          </DialogHeader>
-          <textarea
-            readOnly
-            className="min-h-[240px] w-full rounded-md border bg-muted/30 p-3 font-mono text-xs"
-            value={promptText}
-          />
-          <DialogFooter>
-            <Button onClick={() => setPromptOpen(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+      {job.resume && localPath ? (
+        <p className="text-[10px] text-muted-foreground">
+          Local DOCX is not auto-uploaded — attach if you want a copy on the server.
+        </p>
+      ) : !job.resume && localPath ? (
+        <p className="text-[10px] text-muted-foreground">
+        </p>
+      ) : null}
+    </div>
   );
 }
