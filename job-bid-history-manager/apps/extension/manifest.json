@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Job Bid History Capture",
-  "version": "0.8.43",
+  "version": "0.8.45",
   "description": "Capture job pages, optimize resumes via ChatGPT, and sync to your team dashboard.",
   "permissions": ["storage", "activeTab", "scripting", "contextMenus", "downloads"],
   "options_ui": {

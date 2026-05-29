@@ -55,7 +55,7 @@ function downloadBlobInBrowser(blob: Blob, filename: string) {
 }
 
 /**
- * Download via extension into Downloads/username-YYYY-MM-DD/ when the extension is installed.
+ * Download via extension into Downloads/jbhm/username-YYYY-MM-DD/ when the extension is installed.
  * Falls back to a normal browser download in the default folder.
  */
 export async function downloadResumeWithSubfolder(

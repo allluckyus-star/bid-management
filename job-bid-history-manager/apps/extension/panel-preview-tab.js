@@ -24,6 +24,22 @@ function emptyPreviewDraft() {
   };
 }
 
+function groqModelSelectHtml(selectedId) {
+  const selected = normalizeGroqModel(selectedId);
+  const options = (JBHM_CONFIG.GROQ_MODEL_OPTIONS || [])
+    .map(
+      (o) =>
+        `<option value="${escapeHtml(o.id)}"${o.id === selected ? " selected" : ""}>${escapeHtml(o.label)}</option>`,
+    )
+    .join("");
+  return `
+    <label class="label" for="previewGroqModel">Groq model (extract / analyze)</label>
+    <select id="previewGroqModel" class="input groq-model-select" title="Used for capture and JD analysis. Keys rotate automatically.">
+      ${options}
+    </select>
+  `;
+}
+
 function previewTabHtml() {
   const p = state.previewDraft || emptyPreviewDraft();
   const jdText = p.jd_text || "";
@@ -37,7 +53,8 @@ function previewTabHtml() {
     ${hint ? `<div class="banner ${hint.type}">${escapeHtml(hint.text)}</div>` : ""}
     ${backendDown ? `<div class="banner err">Backend unavailable — fix token in Settings.</div>` : ""}
     <section class="settings-section">
-      <div class="row" style="justify-content:space-between;align-items:center">
+      ${groqModelSelectHtml(state.groqModel)}
+      <div class="row" style="justify-content:space-between;align-items:center;margin-top:12px">
         <h2 style="margin:0">Preview before saving</h2>
         <span class="badge warn">Edit then accept</span>
       </div>
@@ -178,4 +195,10 @@ function wirePreviewTabActions() {
   document
     .getElementById("previewAcceptBtn")
     ?.addEventListener("click", () => void acceptPreviewToDashboard(false));
+
+  document.getElementById("previewGroqModel")?.addEventListener("change", (e) => {
+    const next = normalizeGroqModel(e.target.value);
+    state.groqModel = next;
+    void saveGroqModel(next);
+  });
 }

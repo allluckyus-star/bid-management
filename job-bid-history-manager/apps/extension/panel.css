@@ -592,6 +592,11 @@ body.is-collapsed .panel-header {
   color: var(--foreground);
 }
 
+.groq-model-select {
+  margin-bottom: 4px;
+  cursor: pointer;
+}
+
 .textarea {
   min-height: 120px;
   resize: vertical;

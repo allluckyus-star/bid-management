@@ -92,7 +92,7 @@ function normalizeLocalExtraction(data, capturedText, pageTitle) {
   };
 }
 
-async function groqExtractJobDirect(capturedText, pageTitle, sourceUrl) {
+async function groqExtractJobDirect(capturedText, pageTitle, sourceUrl, model) {
   const cleaned = cleanGroqText(capturedText).slice(0, GROQ_MAX_PROMPT_CHARS);
   const userContent = [
     "Extract job fields from this captured job posting text:\n\n",
@@ -102,6 +102,7 @@ async function groqExtractJobDirect(capturedText, pageTitle, sourceUrl) {
   ].join("");
 
   const result = await groqRunWithKeyPool({
+    model,
     messages: [
       { role: "system", content: JOB_EXTRACTION_SYSTEM_PROMPT },
       { role: "user", content: userContent },
@@ -118,11 +119,12 @@ async function groqExtractJobDirect(capturedText, pageTitle, sourceUrl) {
   };
 }
 
-async function groqGenerateDirect(finalPrompt, _purpose) {
+async function groqGenerateDirect(finalPrompt, _purpose, model) {
   const prompt = cleanGroqText(finalPrompt).slice(0, GROQ_MAX_PROMPT_CHARS);
   if (prompt.length < 40) throw new Error("Final prompt is too short.");
 
   return groqRunWithKeyPool({
+    model,
     messages: [
       {
         role: "system",
@@ -136,7 +138,7 @@ async function groqGenerateDirect(finalPrompt, _purpose) {
   });
 }
 
-async function groqAnalyzeJdDirect(jdText) {
+async function groqAnalyzeJdDirect(jdText, model) {
   const text = cleanGroqText(jdText).slice(0, 12000);
   if (text.length < 40) throw new Error("JD text is too short for AI analysis.");
 
@@ -150,6 +152,7 @@ async function groqAnalyzeJdDirect(jdText) {
   ].join("\n");
 
   return groqRunWithKeyPool({
+    model,
     messages: [{ role: "user", content: prompt }],
     temperature: 0.1,
     maxTokens: 1024,

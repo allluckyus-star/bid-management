@@ -286,7 +286,8 @@ async function extractAndFillPreview({ tabId, capturedText, sourceUrl, pageTitle
 
   let res;
   try {
-    res = await groqExtractJobDirect(text, pageTitle || "", sourceUrl || "");
+    const groqModel = await loadGroqModel();
+    res = await groqExtractJobDirect(text, pageTitle || "", sourceUrl || "", groqModel);
   } catch (err) {
     return { ok: false, error: err?.message || "Extraction failed." };
   }
@@ -690,7 +691,7 @@ function parseResumeNameFromGptText(text) {
 
 /**
  * Render the optimized resume DOCX from the GPT result and download it to:
- *   Downloads/username-YYYY-MM-DD/Company-Role/Resume Name.docx
+ *   Downloads/jbhm/username-YYYY-MM-DD/Company-Role/Resume Name.docx
  * Returns the Downloads-rooted display path (for the Preview "resume path" field).
  */
 async function renderAndSaveResumeFromGptText(gptText, previewFields) {
@@ -998,7 +999,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ ok: false, error: "Final prompt is too short." });
           return;
         }
-        const gen = await groqGenerateDirect(prompt, String(message.purpose || "resume_optimization"));
+        const groqModel = await loadGroqModel();
+        const gen = await groqGenerateDirect(
+          prompt,
+          String(message.purpose || "resume_optimization"),
+          groqModel,
+        );
         const gptText = String(gen?.text || "").trim();
         if (!gptText) {
           sendResponse({ ok: false, error: "Empty response from model." });
@@ -1055,7 +1061,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ ok: false, error: "JD text is too short for AI analysis." });
           return;
         }
-        const gen = await groqAnalyzeJdDirect(jdText);
+        const groqModel = await loadGroqModel();
+        const gen = await groqAnalyzeJdDirect(jdText, groqModel);
         const parsed = parseJsonObject(gen.text);
         if (parsed && typeof parsed === "object") {
           sendResponse({ ok: true, analysis: parsed, formatted: JSON.stringify(parsed, null, 2), meta: gen });

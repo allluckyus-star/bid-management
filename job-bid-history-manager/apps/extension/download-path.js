@@ -1,4 +1,17 @@
-/** Subfolder under the browser default Downloads directory: username-YYYY-MM-DD */
+/** Subfolder under the browser default Downloads directory: jbhm/username-YYYY-MM-DD/... */
+
+const DOWNLOADS_ROOT_FOLDER = "jbhm";
+
+function downloadRootPrefix() {
+  return DOWNLOADS_ROOT_FOLDER;
+}
+
+function withDownloadRoot(relativePath) {
+  const path = String(relativePath || "")
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "");
+  return `${downloadRootPrefix()}/${path}`;
+}
 
 function sanitizeDownloadFolderUser(value) {
   let raw = String(value ?? "")
@@ -85,18 +98,18 @@ function resolveResumeFileName(opts = {}) {
 
 /**
  * Relative path under the Downloads folder (what the downloads API expects):
- *   username-YYYY-MM-DD/Company-Role/Resume Name.docx
+ *   jbhm/username-YYYY-MM-DD/Company-Role/Resume Name.docx
  */
 function buildResumeRelativePath(me, opts = {}) {
   const folder = buildDownloadSubfolder(me);
   const sub = buildResumeJobSubfolder(opts.companyName, opts.jobTitle);
   const name = resolveResumeFileName(opts);
-  return `${folder}/${sub}/${name}.docx`;
+  return withDownloadRoot(`${folder}/${sub}/${name}.docx`);
 }
 
 /**
  * Human-readable path shown in the Preview tab (Downloads-rooted):
- *   Downloads/username-YYYY-MM-DD/Company-Role/Resume Name.docx
+ *   Downloads/jbhm/username-YYYY-MM-DD/Company-Role/Resume Name.docx
  */
 function buildResumeDownloadPath(me, opts = {}) {
   return `Downloads/${buildResumeRelativePath(me, opts)}`;
@@ -115,5 +128,5 @@ function resolveDownloadFilename(me, filename) {
       .split("/")
       .filter(Boolean)
       .pop() || "resume.docx";
-  return `${folder}/${leaf}`;
+  return withDownloadRoot(`${folder}/${leaf}`);
 }

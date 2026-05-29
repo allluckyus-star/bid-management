@@ -294,3 +294,23 @@ async function isExtensionEnabled() {
   const { enabled } = await chrome.storage.local.get({ enabled: true });
   return enabled !== false;
 }
+
+const GROQ_MODEL_STORAGE_KEY = "groqModel";
+
+function normalizeGroqModel(modelId) {
+  const id = String(modelId || "").trim();
+  const options = JBHM_CONFIG.GROQ_MODEL_OPTIONS || [];
+  if (options.some((o) => o.id === id)) return id;
+  return JBHM_CONFIG.DEFAULT_GROQ_MODEL || "llama-3.1-8b-instant";
+}
+
+async function loadGroqModel() {
+  const stored = await chrome.storage.local.get({ [GROQ_MODEL_STORAGE_KEY]: "" });
+  return normalizeGroqModel(stored[GROQ_MODEL_STORAGE_KEY]);
+}
+
+async function saveGroqModel(modelId) {
+  const value = normalizeGroqModel(modelId);
+  await chrome.storage.local.set({ [GROQ_MODEL_STORAGE_KEY]: value });
+  return value;
+}

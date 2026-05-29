@@ -1,7 +1,7 @@
 /** @typedef {"production" | "local"} ApiEnvironment */
 
 const JBHM_CONFIG = {
-  EXTENSION_VERSION: "0.8.43",
+  EXTENSION_VERSION: "0.8.45",
   PRODUCTION_URL: "https://velvety-naiad-90a2b9.netlify.app",
   LOCAL_URL: "http://localhost:3000",
   DEFAULT_ENV: "production",
@@ -21,4 +21,13 @@ const JBHM_CONFIG = {
   DUPLICATE_CAPTURE_MS: 30 * 1000,
   /** Warn when local prompt exceeds this size. */
   PROMPT_WARN_CHARS: 24000,
+  /** Groq models (Preview tab picker; keys still rotate from groq-keys.local.js). */
+  DEFAULT_GROQ_MODEL: "llama-3.1-8b-instant",
+  GROQ_MODEL_OPTIONS: [
+    { id: "llama-3.1-8b-instant", label: "Llama 3.1 8B Instant" },
+    { id: "llama-3.3-70b-versatile", label: "Llama 3.3 70B Versatile" },
+    { id: "meta-llama/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout 17B" },
+    { id: "openai/gpt-oss-20b", label: "GPT OSS 20B" },
+    { id: "qwen/qwen3-32b", label: "Qwen3 32B" },
+  ],
 };

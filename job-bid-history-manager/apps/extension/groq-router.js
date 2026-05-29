@@ -21,6 +21,9 @@ function shuffleArray(items) {
 }
 
 function defaultGroqModel() {
+  if (typeof JBHM_CONFIG !== "undefined" && JBHM_CONFIG.DEFAULT_GROQ_MODEL) {
+    return String(JBHM_CONFIG.DEFAULT_GROQ_MODEL).trim();
+  }
   return String(typeof GROQ_DEFAULT_MODEL !== "undefined" ? GROQ_DEFAULT_MODEL : "llama-3.1-8b-instant").trim();
 }
 

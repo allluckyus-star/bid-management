@@ -58,6 +58,7 @@ let state = {
   previewDraft: null,
   localPromptText: "",
   localPromptWarning: "",
+  groqModel: JBHM_CONFIG.DEFAULT_GROQ_MODEL,
 };
 
 function send(type, payload = {}) {
@@ -961,6 +962,9 @@ async function boot() {
       state.resumeLocalText = text;
     }),
     loadPreviewFromStorage(),
+    loadGroqModel().then((model) => {
+      state.groqModel = model;
+    }),
     loadPromptTemplate().then((template) => {
       state.promptTemplate = template;
     }),
