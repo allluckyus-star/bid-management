@@ -4,7 +4,7 @@ const siteMetaEl = document.getElementById("siteMeta");
 const connBadgeEl = document.getElementById("connBadge");
 const previewTabBtn = document.getElementById("previewTabBtn");
 const promptSendFooterBtn = document.getElementById("promptSendBtn");
-const footerAcceptBtn = document.getElementById("footerAcceptBtn");
+const footerDashboardBtn = document.getElementById("footerDashboardBtn");
 
 const TAB_DEFS = [
   { id: "JD", label: "JD Source", icon: "📋" },
@@ -612,7 +612,6 @@ async function renderContent() {
   else if (activeTab === "Settings") contentEl.innerHTML = settingsTabHtml();
   else contentEl.innerHTML = promptTabHtml();
   wireTabActions();
-  refreshActionBar();
 }
 
 function selectJdMode(mode) {
@@ -875,13 +874,12 @@ function wireTabActions() {
   });
 }
 
-async function openDashboard(path = "/dashboard") {
+async function openDashboard() {
   const settings = await loadExtensionSettings();
-  const url =
-    settings.apiEnv === "local"
-      ? `http://localhost:3000${path}`
-      : `${JBHM_CONFIG.PRODUCTION_URL}${path}`;
-  chrome.tabs.create({ url });
+  const path = state.status?.dashboard_url || "/dashboard";
+  const base = settings.apiBaseUrl.replace(/\/$/, "");
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  chrome.tabs.create({ url: `${base}${normalizedPath}` });
 }
 
 function applyCollapsedUi(collapsed) {
@@ -951,28 +949,7 @@ promptSendFooterBtn.addEventListener("click", async () => {
   }
 });
 
-// Footer Accept — same action as the Preview tab's Accept button.
-footerAcceptBtn.addEventListener("click", async () => {
-  if (activeTab !== "Preview") {
-    activeTab = "Preview";
-    await switchTab();
-  } else {
-    await loadPreviewFromStorage();
-  }
-  await acceptPreviewToDashboard(false);
-});
-
-/** Keep the footer Accept button enabled only when a GPT result is ready (mirrors Preview). */
-function refreshActionBar() {
-  if (!footerAcceptBtn) return;
-  const p = state.previewDraft;
-  const hasGpt = String(p?.gpt_text || "").trim().length > 0;
-  const ready = hasGpt && state.status?.username_validated === true && state.status?.connected !== false;
-  footerAcceptBtn.disabled = !ready;
-  footerAcceptBtn.title = ready
-    ? "Accept & send to dashboard"
-    : "Build the ChatGPT result first, then Accept";
-}
+footerDashboardBtn?.addEventListener("click", () => void openDashboard());
 
 async function boot() {
   showTabLoading("Connecting…");

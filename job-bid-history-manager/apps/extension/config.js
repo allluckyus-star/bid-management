@@ -1,13 +1,13 @@
 /** @typedef {"production" | "local"} ApiEnvironment */
 
 const JBHM_CONFIG = {
-  EXTENSION_VERSION: "0.8.40",
-  PRODUCTION_URL: "https://bid-management-peach.vercel.app",
+  EXTENSION_VERSION: "0.8.43",
+  PRODUCTION_URL: "https://velvety-naiad-90a2b9.netlify.app",
   LOCAL_URL: "http://localhost:3000",
   DEFAULT_ENV: "production",
   CONTEXT_MENU_TITLE: "Capture this page → extract to Preview",
   /**
-   * Free-tier safe mode (recommended on Vercel Hobby):
+   * Free-tier safe mode (recommended on Netlify/Vercel free tiers):
    * review-first capture, local prompt, cached status, no auto server AI on capture.
    */
   FREE_TIER_SAFE_MODE: true,

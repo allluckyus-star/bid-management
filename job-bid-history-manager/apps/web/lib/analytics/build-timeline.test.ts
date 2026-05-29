@@ -33,6 +33,13 @@ describe("buildTimelineFromRows", () => {
     expect(ally!.buckets.some((b) => b.count > 0)).toBe(true);
   });
 
+  it("returns empty series when there are no jobs", () => {
+    const out = buildTimelineFromRows([], "1d", undefined, undefined, undefined, "UTC");
+    expect(out.series).toEqual([]);
+    expect(out.history_start).toBeNull();
+    expect(out.history_end).toBeNull();
+  });
+
   it("counts both users on day buckets", () => {
     const out = buildTimelineFromRows(
       rows,

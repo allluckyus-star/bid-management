@@ -54,6 +54,7 @@ export function useDashboardSummaryQuery(opts: { paused: boolean }) {
     staleTime: STALE.summary,
     refetchInterval: interval,
     refetchOnWindowFocus: !FREE_TIER_SAFE_MODE,
+    retry: 1,
   });
 }
 
@@ -88,6 +89,7 @@ export function useTimelineQuery(
     staleTime: STALE.timeline,
     refetchOnWindowFocus: false,
     placeholderData: keepPreviousData,
+    retry: 1,
   });
 }
 

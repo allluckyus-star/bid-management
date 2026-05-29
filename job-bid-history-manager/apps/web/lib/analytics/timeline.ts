@@ -69,11 +69,16 @@ export async function buildTimeline(
   tableHighlight?: JobFilters,
 ): Promise<TimelineResponse> {
   const supabase = await createClient();
-  const [timeZone, jobs, bounds] = await Promise.all([
+  const [timeZone, bounds] = await Promise.all([
     getTeamTimezone(supabase, teamId),
-    fetchAllJobsForTimeline(supabase, teamId, { start, end }),
     fetchTimelineHistoryBounds(supabase, teamId),
   ]);
+
+  if (!bounds.min && !bounds.max) {
+    return buildTimelineFromRows([], bucket, start, end, tableHighlight, timeZone);
+  }
+
+  const jobs = await fetchAllJobsForTimeline(supabase, teamId, { start, end });
   const result = buildTimelineFromRows(jobs, bucket, start, end, tableHighlight, timeZone);
   return {
     ...result,

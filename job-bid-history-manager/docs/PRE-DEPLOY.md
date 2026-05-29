@@ -32,12 +32,23 @@ npm run dev
 - Capture a job page → row appears
 - Edit cell, tags, notes, JD view, resume .docx, chart (Hour/Day/Month switches without extra API calls)
 
-## 3. Vercel
+## 3. Production deploy (Netlify or Vercel)
 
-1. Import repo; root directory **`apps/web`** (or monorepo build: `cd ../.. && npm run build:web`).
-2. Set the same env vars (secrets without `NEXT_PUBLIC_` prefix where applicable).
-3. Deploy → extension **Web app URL** = `https://your-app.vercel.app`
-4. Supabase **Authentication → URL configuration**: Site URL + redirect URLs for production (and `http://localhost:3000/**` for dev).
+**Netlify** (monorepo at repo root):
+
+1. Base directory: `job-bid-history-manager`
+2. Build command: `npm run build:web`
+3. Enable **Next.js** runtime (`@netlify/plugin-nextjs`); leave publish directory empty (see root `netlify.toml`).
+4. Set the same env vars as `.env.example` (`APP_BASE_URL` = your live URL, no trailing slash).
+
+**Vercel:** import repo; root **`apps/web`** or monorepo `npm run build:web`.
+
+After deploy:
+
+1. Extension **production API** in `apps/extension/config.js` → `PRODUCTION_URL` (or Settings → Production in the extension).
+2. Supabase **Authentication → URL configuration**: Site URL + `https://YOUR-SITE/**` and `http://localhost:3000/**` for dev.
+
+Example production URL: `https://velvety-naiad-90a2b9.netlify.app`
 
 ## 4. Chrome extension
 

@@ -744,6 +744,10 @@ export function TimelineChart({
     rangeAlignedRef.current = true;
     const bounds = parseHistoryBounds(data.history_start, data.history_end);
     historyBoundsRef.current = bounds;
+    if (bounds.minMs == null && bounds.maxMs == null) {
+      pendingResetRef.current = true;
+      return;
+    }
     pendingResetRef.current = true;
     const full = dataAwareInitialRange(bucket, bounds, tz);
     onRequestRange(bucket, capTimelineLoadRange(full, bucket, tz), { resetView: true });

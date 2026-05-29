@@ -20,6 +20,16 @@ export async function fetchDashboardSummary(teamId: string): Promise<DashboardSu
 
   const { count: total } = await base();
 
+  if (!total) {
+    return {
+      total_bids: 0,
+      today_bids: 0,
+      week_bids: 0,
+      top_bidder: null,
+      total_companies: 0,
+    };
+  }
+
   const { count: today } = await supabase
     .from("jobs")
     .select("id", { count: "exact", head: true })

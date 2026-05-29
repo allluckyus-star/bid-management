@@ -1,4 +1,4 @@
-# Chrome extension (v0.8.39)
+# Chrome extension (v0.8.42)
 
 The extension is a **right-side workspace panel only** (Jobright-style). There is **no popup**.
 
@@ -67,7 +67,7 @@ Server stores **final accepted result only** — not raw resume text or JD draft
    - test connection
 5. On a job listing page, click the extension icon — workspace opens immediately.
 
-Default API: `https://bid-management-peach.vercel.app`  
+Default API: `https://velvety-naiad-90a2b9.netlify.app`  
 Developers may switch to localhost in the workspace **Settings** tab or Options page.
 
 ## Free-tier safe mode

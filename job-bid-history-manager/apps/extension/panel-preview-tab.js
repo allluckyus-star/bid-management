@@ -2,7 +2,7 @@
  * Preview tab — edit fields before sending accepted data to server.
  * Fields are filled by AI extraction (right-click "Capture this page" or the
  * selection "Extract to Preview" button). The JD textarea here is independent
- * from the JD Source tab. Accept stays disabled until a ChatGPT result exists.
+ * from the JD Source tab. Accept unlocks after a ChatGPT result exists.
  */
 
 function emptyPreviewDraft() {
@@ -41,7 +41,7 @@ function previewTabHtml() {
         <h2 style="margin:0">Preview before saving</h2>
         <span class="badge warn">Edit then accept</span>
       </div>
-      <p class="hint">Right-click a job page → <strong>Capture this page</strong>, or select text → <strong>Extract to Preview</strong>. Empty fields are filled with "-". Accept unlocks after you build the ChatGPT prompt.</p>
+      <p class="hint">Right-click a job page → <strong>Capture this page</strong>, or select text → <strong>Extract to Preview</strong>. Empty fields are filled with "-". Accept unlocks after you build the ChatGPT prompt. Use <strong>Dashboard</strong> in the footer to open the web app.</p>
       <div class="capture-grid">
         <label class="label" for="prevTitle">Job title</label>
         <input id="prevTitle" class="input" value="${escapeHtml(p.job_title)}" />
@@ -75,8 +75,6 @@ function previewTabHtml() {
 function syncPreviewFromInputs(root) {
   const p = state.previewDraft;
   if (!p) return;
-  // Only sync fields whose inputs are actually rendered (Accept can be triggered
-  // from the footer while another tab is showing — don't wipe the stored draft).
   const set = (sel, key) => {
     const el = root?.querySelector(sel);
     if (el) p[key] = String(el.value || "");
@@ -147,7 +145,6 @@ async function acceptPreviewToDashboard(force = false) {
     await renderContent();
     return;
   }
-  // Saved to the dashboard — empty the Preview inputs for the next job.
   state.previewDraft = emptyPreviewDraft();
   await clearPreviewDraft();
   await renderContent();

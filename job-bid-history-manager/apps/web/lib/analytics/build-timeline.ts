@@ -33,6 +33,29 @@ export function buildTimelineFromRows(
   timeZone?: string,
 ): TimelineResponse {
   const tz = normalizeTimeZone(timeZone ?? DEFAULT_TEAM_TIMEZONE);
+
+  if (allRows.length === 0) {
+    const now = new Date();
+    const endDt = end ? new Date(end) : now;
+    const startDt = start
+      ? new Date(start)
+      : new Date(endDt.getTime() - 30 * 86400000);
+    const capped = capTimelineLoadRange(
+      { start: startDt.toISOString(), end: endDt.toISOString() },
+      bucket,
+      tz,
+    );
+    return {
+      bucket,
+      timezone: tz,
+      start: capped.start,
+      end: capped.end,
+      history_start: null,
+      history_end: null,
+      series: [],
+    };
+  }
+
   const now = new Date();
   const endDt = end ? new Date(end) : now;
   const startDt = start
