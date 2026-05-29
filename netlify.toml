@@ -1,0 +1,10 @@
+[build]
+  base = "job-bid-history-manager"
+  command = "npm run build:web"
+  publish = "apps/web/.next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[build.environment]
+  NODE_VERSION = "20"
