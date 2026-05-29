@@ -17,6 +17,24 @@ cp apps/extension/groq-keys.local.example.js apps/extension/groq-keys.local.js
 
 Reload the unpacked extension after editing keys.
 
+### Download zip (`npm run pack:extension`)
+
+When you pack **on your machine** and `groq-keys.local.js` exists with real `gsk_…` keys, the zip embeds them in both `groq-keys.js` and `groq-keys.local.js` — capture works after unzip + load unpacked.
+
+**Netlify/CI:** one env var, any number of keys — add more later by editing the same value:
+
+```
+GROQ_KEYS=gsk_first,gsk_second,gsk_third,gsk_fourth
+```
+
+Netlify → Site configuration → Environment variables → **Production**. Mark secret. Redeploy.
+
+Local `groq-keys.local.js` wins when present on the pack machine. Without keys, the zip ships a placeholder — edit after unzip.
+
+**Security:** the zip is served from `/downloads/` (public URL). Only embed keys if your site is access-controlled or you accept that anyone with the URL can extract them.
+
+Check `apps/web/public/downloads/extension-meta.json` → `groqKeysIncluded: true` when keys were embedded.
+
 ### What still uses the server
 
 | Action | Route |

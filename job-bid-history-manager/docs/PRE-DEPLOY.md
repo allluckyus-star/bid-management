@@ -40,6 +40,11 @@ npm run dev
 2. Build command: `npm run build:web`
 3. Enable **Next.js** runtime (`@netlify/plugin-nextjs`); leave publish directory empty (see root `netlify.toml`).
 4. Set the same env vars as `.env.example` (`APP_BASE_URL` = your live URL, no trailing slash).
+5. **Extension zip (optional):** set one Netlify env var so the download includes Groq keys:
+   ```
+   GROQ_KEYS=gsk_aaa,gsk_bbb,gsk_ccc
+   ```
+   Comma-separated — add a 4th, 5th key anytime by editing this one value. Mark secret. Redeploy.
 
 **Vercel:** import repo; root **`apps/web`** or monorepo `npm run build:web`.
 

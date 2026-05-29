@@ -19,6 +19,7 @@ type ExtensionMeta = {
   version?: string;
   filename?: string;
   folderName?: string;
+  groqKeysIncluded?: boolean;
 };
 
 function loadMeta(): ExtensionMeta | null {
@@ -41,6 +42,7 @@ export function ExtensionInstallPanel() {
   const available = zipAvailable();
   const version = meta?.version ?? "0.5.0";
   const folderName = meta?.folderName ?? "job-bid-capture-extension";
+  const groqKeysIncluded = meta?.groqKeysIncluded === true;
 
   return (
     <Card>
@@ -80,6 +82,18 @@ export function ExtensionInstallPanel() {
             Right-click the extension icon → <strong>Options</strong> (or use the workspace{" "}
             <strong>Settings</strong> tab). Paste your capture token and validate your username.
           </li>
+          {!groqKeysIncluded ? (
+            <li>
+              If capture says Groq keys are missing: edit{" "}
+              <code className="rounded bg-muted px-1">groq-keys.local.js</code> in the unpacked
+              folder (copy from <code className="rounded bg-muted px-1">groq-keys.local.example.js</code>
+              ) and add your <code className="rounded bg-muted px-1">gsk_…</code> keys, then reload
+              the extension. Or run <code className="rounded bg-muted px-1">npm run pack:extension</code>{" "}
+              locally (with keys in the repo) and re-download. Site admins can set{" "}
+              <code className="rounded bg-muted px-1">GROQ_KEYS</code> in Netlify (comma-separated{" "}
+              <code className="rounded bg-muted px-1">gsk_…</code> keys) and redeploy.
+            </li>
+          ) : null}
           <li>
             On a job listing page, click the extension icon to open the right-side workspace panel.
             Use <strong>Capture job</strong> in the panel footer, or right-click the page →{" "}

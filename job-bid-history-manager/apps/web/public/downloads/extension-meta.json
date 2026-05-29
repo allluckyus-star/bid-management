@@ -2,5 +2,7 @@
   "version": "0.8.45",
   "filename": "job-bid-capture-extension.zip",
   "folderName": "job-bid-capture-extension",
-  "builtAt": "2026-05-29T15:57:56.416Z"
+  "builtAt": "2026-05-29T17:01:43.270Z",
+  "groqKeysIncluded": true,
+  "groqKeyCount": 3
 }
