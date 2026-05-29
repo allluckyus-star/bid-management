@@ -1,4 +1,10 @@
-importScripts("config.js", "prompt-defaults.js", "storage.js", "local-storage.js", "api.js", "download-path.js");
+importScripts("config.js", "prompt-defaults.js", "groq-keys.js");
+try {
+  importScripts("groq-keys.local.js");
+} catch (_e) {
+  // groq-keys.local.js is optional (gitignored). Copy groq-keys.local.example.js to enable AI.
+}
+importScripts("groq-router.js", "groq-client.js", "storage.js", "local-storage.js", "api.js", "download-path.js");
 
 const CHATGPT_URL_PATTERNS = [
   "https://chatgpt.com/*",
@@ -266,13 +272,11 @@ function dashIfEmpty(value) {
 
 /** Run Groq extraction on text and write the result into the Preview draft (no DB save). */
 async function extractAndFillPreview({ tabId, capturedText, sourceUrl, pageTitle, captureMethod }) {
-  const settings = await loadExtensionSettings();
-  if (!settings.captureToken) {
-    return { ok: false, error: "Add a capture token in extension Settings." };
-  }
-  const status = await getExtensionStatus();
-  if (!status.connected) {
-    return { ok: false, error: status.error || "Extension not connected." };
+  if (!groqHasKeys()) {
+    return {
+      ok: false,
+      error: "Groq keys not configured. Copy groq-keys.local.example.js to groq-keys.local.js and add API keys.",
+    };
   }
 
   const text = String(capturedText || "").trim();
@@ -282,11 +286,7 @@ async function extractAndFillPreview({ tabId, capturedText, sourceUrl, pageTitle
 
   let res;
   try {
-    res = await postExtractJob(settings.apiBaseUrl, settings.captureToken, {
-      captured_text: text,
-      page_title: pageTitle || "",
-      source_url: sourceUrl || "",
-    });
+    res = await groqExtractJobDirect(text, pageTitle || "", sourceUrl || "");
   } catch (err) {
     return { ok: false, error: err?.message || "Extraction failed." };
   }
@@ -939,6 +939,89 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           mimeType: String(message.mimeType || ""),
         });
         sendResponse({ ok: true, text: String(out?.text || "") });
+      } catch (err) {
+        sendResponse({ ok: false, error: err?.message || String(err) });
+      }
+    })();
+    return true;
+  }
+
+  if (type === "GENERATE_RESUME_PROMPT") {
+    (async () => {
+      try {
+        if (!groqHasKeys()) {
+          sendResponse({ ok: false, error: "Groq keys not configured." });
+          return;
+        }
+        const prompt = String(message.prompt || "").trim();
+        if (prompt.length < 40) {
+          sendResponse({ ok: false, error: "Final prompt is too short." });
+          return;
+        }
+        const gen = await groqGenerateDirect(prompt, String(message.purpose || "resume_optimization"));
+        const gptText = String(gen?.text || "").trim();
+        if (!gptText) {
+          sendResponse({ ok: false, error: "Empty response from model." });
+          return;
+        }
+        const meta = {
+          model: gen.modelLabel || "groq",
+          latency_ms: gen.latencyMs,
+          strategy: gen.strategy || "direct",
+          fallback_count: gen.fallbackCount ?? 0,
+          prompt_strategy: "final-prompt",
+        };
+        const existing = (await getPreviewDraft()) || {};
+        let resume_path = existing.resume_path || "";
+        let resumeError = "";
+        try {
+          resume_path = await renderAndSaveResumeFromGptText(gptText, existing);
+        } catch (err) {
+          resumeError = err?.message || String(err);
+        }
+        await savePreviewDraft({
+          ...existing,
+          gpt_text: gptText,
+          resume_path,
+          generation_meta: meta,
+        });
+        await setOpenToPreview(true);
+        chrome.runtime
+          .sendMessage({
+            type: "PREVIEW_DRAFT_UPDATED",
+            resumeSaved: !resumeError,
+            resumePath: resume_path,
+            resumeError,
+            generationMeta: meta,
+          })
+          .catch(() => {});
+        sendResponse({ ok: true, meta, resume_path, resumeError });
+      } catch (err) {
+        sendResponse({ ok: false, error: err?.message || String(err) });
+      }
+    })();
+    return true;
+  }
+
+  if (type === "AI_ANALYZE_JD_FOR_PROMPT") {
+    (async () => {
+      try {
+        if (!groqHasKeys()) {
+          sendResponse({ ok: false, error: "Groq keys not configured." });
+          return;
+        }
+        const jdText = String(message.jd_text || "").trim();
+        if (jdText.length < 40) {
+          sendResponse({ ok: false, error: "JD text is too short for AI analysis." });
+          return;
+        }
+        const gen = await groqAnalyzeJdDirect(jdText);
+        const parsed = parseJsonObject(gen.text);
+        if (parsed && typeof parsed === "object") {
+          sendResponse({ ok: true, analysis: parsed, formatted: JSON.stringify(parsed, null, 2), meta: gen });
+        } else {
+          sendResponse({ ok: false, error: "Could not parse JD analysis JSON." });
+        }
       } catch (err) {
         sendResponse({ ok: false, error: err?.message || String(err) });
       }

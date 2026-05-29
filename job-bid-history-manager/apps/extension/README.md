@@ -1,6 +1,31 @@
-# Chrome extension (v0.8.24)
+# Chrome extension (v0.8.39)
 
 The extension is a **right-side workspace panel only** (Jobright-style). There is **no popup**.
+
+## AI: direct Groq (hidden key pool)
+
+Job extraction and resume generation call **Groq directly from the extension** — not through your JBHM server.
+
+- Up to **3 API keys** rotate randomly per request (with automatic fallback on rate limits).
+- Keys live in `groq-keys.local.js` (gitignored). **No UI** — users never see or manage keys.
+- Setup (developer only):
+
+```bash
+cp apps/extension/groq-keys.local.example.js apps/extension/groq-keys.local.js
+# Edit groq-keys.local.js — paste up to 3 gsk_… keys
+```
+
+Reload the unpacked extension after editing keys.
+
+### What still uses the server
+
+| Action | Route |
+|--------|-------|
+| Test connection | `GET /api/extension/me` |
+| Validate username | `POST /api/extension/validate-username` |
+| Save accepted bid | `POST /api/capture/job` |
+| DOCX build (stateless) | Team render-docx API |
+| .docx/.pdf text parse (stateless) | `POST /api/extension/extract-doc` |
 
 ## UX
 

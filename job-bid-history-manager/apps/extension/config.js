@@ -1,7 +1,7 @@
 /** @typedef {"production" | "local"} ApiEnvironment */
 
 const JBHM_CONFIG = {
-  EXTENSION_VERSION: "0.8.23",
+  EXTENSION_VERSION: "0.8.39",
   PRODUCTION_URL: "https://bid-management-peach.vercel.app",
   LOCAL_URL: "http://localhost:3000",
   DEFAULT_ENV: "production",
