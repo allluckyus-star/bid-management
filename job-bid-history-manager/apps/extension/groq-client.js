@@ -2,49 +2,70 @@
  * Direct Groq calls from the extension (no JBHM server proxy).
  */
 
-const JOB_EXTRACTION_SYSTEM_PROMPT = `You extract structured data from job posting page text for a bid-tracking database.
-Input is visible page text (innerText), plus PAGE_TITLE and SOURCE_URL when provided.
+const ALLOWED_EXTRACTION_TAGS = new Set([
+  "contract",
+  "internship",
+  "full-time",
+  "part-time",
+  "hybrid",
+  "onsite",
+  "remote",
+]);
 
-Return ONLY one JSON object. No markdown fences, no explanation.
-Extract only facts explicitly present in the input. Do not guess or infer missing fields.
+const EMPLOYMENT_EXTRACTION_TAGS = new Set(["contract", "internship", "full-time", "part-time"]);
 
-ANTI-HALLUCINATION (CRITICAL): Use ONLY text that appears in the provided input. NEVER invent, fabricate, or write a
-generic job description, responsibilities, requirements, skills, salary, or company that is not literally present in the
-input. If the input is mostly navigation/menus/marketing and contains little or no real job description, return the
-role-relevant text that IS present, and use "" (or empty arrays) for anything not present — do NOT fill gaps with a
-plausible-sounding template.
+const JOB_EXTRACTION_SYSTEM_PROMPT = `Extract job posting fields from visible page text for a bid-tracking and resume-optimization tool.
 
-JSON schema keys:
-company_name, job_title, location,
-salary_text, salary_min, salary_max, salary_currency, salary_period,
-employment_type, workplace_type, tag_names,
-required_skills, nice_to_have_skills,
-cleaned_job_description, hiring_contact, confidence
+Return ONLY one JSON object. No markdown. No explanation.
+Use ONLY facts explicitly present in the input. Do not guess or invent.
 
-salary_period: "hourly", "monthly", "annual", or null.
+Output keys:
+company_name, job_title, location, salary_text, salary_min, salary_max, salary_currency, salary_period, tag_names, cleaned_job_description, confidence
 
-SALARY RULES:
-- salary_text must contain ONLY compensation/pay range text copied from the posting.
-- salary_text must be "" if the page does not explicitly state pay, base salary, compensation, hourly rate, annual salary, monthly salary, or pay range.
-- Do NOT treat as salary: funding, revenue, valuation, company size, market size, users, model size, parameter count, years, percentages, equity valuation, Series A/B/C, 401k, bonus unless an explicit compensation dollar amount.
-- Reject $XM/$XB (million/billion) unless the same phrase clearly says annual salary/compensation (extremely rare).
+Field meaning:
+- job_title = role title.
+- company_name = hiring company name.
+- location = where the person will work.
+- salary_text = exact compensation text copied from the posting.
+- cleaned_job_description = useful JD text for resume optimization (select and preserve role-relevant sentences; do not summarize or rewrite unless cleaning noise).
+
+Salary rules:
+- salary_text must be "" unless the posting explicitly states compensation/pay/salary/rate.
+- Valid salary formats include:
+  $..., $.../hr, $.../mo, $.../week, $.../yr,
+  $... - $..., $.../hr - $.../hr, $.../mo - $.../mo,
+  $.../week - $.../week, $.../yr - $.../yr.
+- Do NOT treat company size, revenue, funding, valuation, years, percentages, bonus, equity, 401k, or benefits as salary.
 - If salary_text is "", salary_min and salary_max must be null.
+- salary_period must be "hourly", "monthly", "weekly", "annual", or null.
+- salary_currency should be "USD" only when salary uses $, otherwise use the explicit currency or "".
 
-EMPLOYMENT / WORKPLACE / TAGS:
-- employment_type: "full-time" | "part-time" | "contract" | "internship" | null
-- workplace_type: "remote" | "hybrid" | "onsite" | null
-- tag_names: array using ONLY: full-time, part-time, contract, internship, remote, hybrid, onsite
-- TAG SAFETY (CRITICAL): derive tags ONLY from words describing the employment relationship or work location.
-  NEVER derive a tag from product names ("Contract Lifecycle Management", "contracts", "agreements").
-  Only output "contract" when the posting explicitly says the position/role is a contract job.
+Tag rules:
+- tag_names may contain ONLY: contract, internship, full-time, part-time, hybrid, onsite, remote.
+- A job may have both an employment tag and a workplace tag (e.g. full-time + remote).
+- Use tags only when explicitly supported by the posting.
 - Do NOT put skills in tag_names.
+- Do NOT use "contract" because the posting mentions contracts, agreements, or contract lifecycle management. Use "contract" only if the job type is contract.
 
-cleaned_job_description (CRITICAL):
-- NOT a summary. Extract a subset of the original posting text only.
-- KEEP ONLY: role summary, responsibilities, requirements, qualifications, skills/tech stack.
-- REMOVE: company overview, benefits/perks, EEO, navigation, application instructions.
+Cleaned JD rules:
+- cleaned_job_description is NOT a summary.
+- Do not rewrite the JD into your own structure.
+- Select and preserve the useful original JD sections/sentences.
+- Keep sections like Responsibilities, Requirements, Qualifications, What you'll do, Who you are, Must-have, Preferred, Skills, Tech Stack, Experience, and Domain Requirements.
+- Remove navigation, apply buttons, first-name/last-name forms, benefits, perks, EEO, legal text, privacy notices, cookies, company marketing, footer links, and repeated boilerplate.
+- Preserve original wording as much as possible.
+- Remove duplicate lines.
+- The JD should be useful for optimizing a resume.
 
-Never use Apply/LinkedIn/Indeed as company_name.`;
+Company rules:
+- Never use Apply, LinkedIn, Indeed, Glassdoor, Workday, Greenhouse, Lever, ZipRecruiter, or similar platform names as company_name.
+- If company or title is unclear, return "".
+
+confidence:
+- number from 0 to 1.
+- Use high confidence only when title, company, and useful JD content are clearly present.
+
+Return ONLY the JSON object.`;
 
 function parseJsonObject(raw) {
   let t = String(raw || "").trim();
@@ -66,6 +87,29 @@ function dashIfEmptyGroq(v) {
   return s || "-";
 }
 
+function normalizeTagNames(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const item of raw) {
+    const tag = String(item || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "-");
+    if (!ALLOWED_EXTRACTION_TAGS.has(tag) || seen.has(tag)) continue;
+    seen.add(tag);
+    out.push(tag);
+  }
+  return out;
+}
+
+function employmentTypeFromTags(tagNames) {
+  for (const tag of tagNames) {
+    if (EMPLOYMENT_EXTRACTION_TAGS.has(tag)) return tag;
+  }
+  return "";
+}
+
 function normalizeLocalExtraction(data, capturedText, pageTitle) {
   if (!data || typeof data !== "object") {
     const titleGuess = String(pageTitle || "")
@@ -81,25 +125,34 @@ function normalizeLocalExtraction(data, capturedText, pageTitle) {
       cleaned_job_description: String(capturedText || "").slice(0, 15000) || "-",
     };
   }
+  const tag_names = normalizeTagNames(data.tag_names);
   return {
     job_title: dashIfEmptyGroq(data.job_title),
     company_name: dashIfEmptyGroq(data.company_name),
     location: dashIfEmptyGroq(data.location),
     salary_text: dashIfEmptyGroq(data.salary_text),
-    employment_type: dashIfEmptyGroq(data.employment_type),
-    tag_names: Array.isArray(data.tag_names) ? data.tag_names.filter(Boolean) : [],
+    employment_type: dashIfEmptyGroq(employmentTypeFromTags(tag_names)),
+    tag_names,
     cleaned_job_description: dashIfEmptyGroq(data.cleaned_job_description || capturedText),
   };
 }
 
-async function groqExtractJobDirect(capturedText, pageTitle, sourceUrl, model) {
+function buildExtractionUserContent(capturedText, pageTitle, sourceUrl) {
   const cleaned = cleanGroqText(capturedText).slice(0, GROQ_MAX_PROMPT_CHARS);
-  const userContent = [
-    "Extract job fields from this captured job posting text:\n\n",
+  return [
+    "Extract job fields from the tagged job posting text below.",
+    "",
+    pageTitle ? `<PAGE_TITLE>${pageTitle}</PAGE_TITLE>` : "<PAGE_TITLE></PAGE_TITLE>",
+    sourceUrl ? `<SOURCE_URL>${sourceUrl}</SOURCE_URL>` : "<SOURCE_URL></SOURCE_URL>",
+    "",
+    "<CAPTURED_JOB_TEXT>",
     cleaned,
-    pageTitle ? `\n\nPAGE_TITLE: ${pageTitle}` : "",
-    sourceUrl ? `\nSOURCE_URL: ${sourceUrl}` : "",
-  ].join("");
+    "</CAPTURED_JOB_TEXT>",
+  ].join("\n");
+}
+
+async function groqExtractJobDirect(capturedText, pageTitle, sourceUrl, model) {
+  const userContent = buildExtractionUserContent(capturedText, pageTitle, sourceUrl);
 
   const result = await groqRunWithKeyPool({
     model,
