@@ -698,6 +698,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message.type === "GET_ASSISTANT_CAPTION_RAW") {
+    const latest = getLatestAssistantTurnElement();
+    if (!latest) {
+      sendResponse({ status: "ok", text: "", generating: isAssistantLikelyGenerating() });
+      return false;
+    }
+    const rawText = sanitizeAssistantText(latest.innerText || latest.textContent || "");
+    sendResponse({
+      status: "ok",
+      text: rawText,
+      generating: isAssistantLikelyGenerating(),
+    });
+    return false;
+  }
+
   if (message.type === "GET_LATEST_GPT_TEXT") {
     const latest = getLatestAssistantMessageElement();
     if (!latest) {
@@ -868,6 +883,7 @@ function startAutoCaptureAfterSubmit() {
     const elapsed = Date.now() - startedAt;
     if (elapsed > 180000) {
       stopAutoCaptureJob();
+      chrome.runtime.sendMessage({ type: "PREVIEW_CAPTURE_DONE", ok: false, reason: "timeout" }).catch(() => {});
       return;
     }
     autoCaptureJob.timer = window.setTimeout(tick, 700);
@@ -925,6 +941,23 @@ function extractLargestJsonObject(raw) {
     }
   }
   return best;
+}
+
+/** Latest visible assistant turn — includes in-progress / invalid JSON (for caption streaming). */
+function getLatestAssistantTurnElement() {
+  const nodes = Array.from(
+    document.querySelectorAll(
+      "[data-message-author-role='assistant'], [data-testid*='conversation-turn-assistant'], article[data-testid*='conversation-turn']"
+    )
+  );
+  for (let i = nodes.length - 1; i >= 0; i -= 1) {
+    const el = nodes[i];
+    if (!(el instanceof HTMLElement)) continue;
+    if (!isVisible(el)) continue;
+    const text = sanitizeAssistantText(el.innerText || el.textContent || "");
+    if (text.length > 0) return el;
+  }
+  return null;
 }
 
 function getLatestAssistantMessageElement() {

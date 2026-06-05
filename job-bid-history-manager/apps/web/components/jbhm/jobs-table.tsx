@@ -59,6 +59,7 @@ import {
   isFilterableField,
   isOrderableField,
 } from "@/lib/jbhm/column-controls";
+import { resolveJdDisplayText } from "@/lib/jbhm/resolve-jd-display";
 import { cn, formatDate } from "@/lib/utils";
 
 type ColumnMeta = { align?: "center" | "left" };
@@ -179,7 +180,7 @@ export function JobsTable({
     try {
       const jd = await fetchJobJd(teamId, job.id);
       setJdDialog({
-        text: jd.cleaned_text,
+        text: resolveJdDisplayText(jd),
         modelName: jd.model_name,
       });
     } catch (e) {

@@ -28,6 +28,7 @@ import {
   type TeamJdSelectionView,
 } from "@/lib/api/client";
 import { cycleColumnSort, isFilterableField, isOrderableField } from "@/lib/jbhm/column-controls";
+import { resolveJdDisplayText } from "@/lib/jbhm/resolve-jd-display";
 import { notifyActionSuccess, notifyLoadError } from "@/lib/jbhm/notify";
 import { PageContainer } from "@/components/layout/page-container";
 import { useTeamTimezone } from "@/context/team-context";
@@ -391,7 +392,7 @@ export function TeamJdPage({ teamId }: { teamId: string }) {
     try {
       const jd = await fetchJobJd(teamId, job.id);
       setJdDialog({
-        text: jd.cleaned_text,
+        text: resolveJdDisplayText(jd),
         modelName: jd.model_name,
       });
     } catch (e) {

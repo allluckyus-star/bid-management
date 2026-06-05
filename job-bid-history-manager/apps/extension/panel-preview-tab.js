@@ -119,13 +119,16 @@ async function acceptPreviewToDashboard(force = false) {
 
   const jdText = cleanedPreviewValue(p.jd_text);
   const gptText = String(p.gpt_text || "").trim();
-  const capturedText = (gptText.length >= 80 ? gptText : jdText).slice(
-    0,
-    JBHM_CONFIG.MAX_CAPTURE_TEXT_CHARS || 30000,
-  );
+  const maxChars = JBHM_CONFIG.MAX_CAPTURE_TEXT_CHARS || 30000;
+  const jdForSave = jdText.slice(0, maxChars);
+  // Dashboard "View JD" must store the job description — not the ChatGPT resume JSON.
+  const capturedText =
+    jdForSave.length >= 80
+      ? jdForSave
+      : gptText.slice(0, maxChars);
 
   if (capturedText.length < 80) {
-    setInlineBanner("Need a job description or ChatGPT result (80+ chars) before saving.", "err");
+    setInlineBanner("Need a job description (80+ chars) before saving.", "err");
     return;
   }
 
@@ -136,7 +139,8 @@ async function acceptPreviewToDashboard(force = false) {
     forceCapture: force,
     reviewed: {
       client_reviewed: true,
-      captured_text: capturedText,
+      captured_text: jdForSave.length >= 80 ? jdForSave : capturedText,
+      jd_text: jdForSave,
       source_url: p.source_url || state.page?.url || "",
       page_title: p.page_title || cleanedPreviewValue(p.job_title) || state.page?.title || "",
       capture_method: p.capture_method || "preview-accept",

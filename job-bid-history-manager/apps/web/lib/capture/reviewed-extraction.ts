@@ -21,6 +21,8 @@ export type ReviewedCaptureFields = {
   employmentType?: string;
   tag_names?: string[];
   tags?: string;
+  /** Preview tab JD — stored as cleaned_text for dashboard View JD */
+  jd_text?: string;
   client_reviewed?: boolean;
 };
 
@@ -67,6 +69,8 @@ export function buildReviewedExtraction(
   const salaryText = clamp(fields.salary_text || fields.salary, LIMITS.salary_text);
   const employment = normalizeEmploymentType(fields.employment_type || fields.employmentType);
   const tags = parseTags(fields.tag_names ?? fields.tags);
+  const explicitJd = String(fields.jd_text ?? "").trim();
+  const cleanedJd = (explicitJd || capturedText).slice(0, 200_000);
 
   return {
     ...base,
@@ -76,7 +80,7 @@ export function buildReviewedExtraction(
     salary_text: salaryText || base.salary_text,
     employment_type: employment ?? base.employment_type,
     tag_names: tags.length ? tags : base.tag_names,
-    cleaned_job_description: capturedText.slice(0, 200_000) || base.cleaned_job_description,
+    cleaned_job_description: cleanedJd || base.cleaned_job_description,
     confidence: Math.max(base.confidence, 0.65),
   };
 }

@@ -984,7 +984,22 @@ async function boot() {
 void boot();
 
 chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type === "PREVIEW_CAPTURE_DONE") {
+    void setPreviewCaptureMode(false);
+    return;
+  }
+  if (message?.type === "GPT_CAPTION_UPDATE") {
+    console.log("[IA caption] update", {
+      kind: "full",
+      text_changed: true,
+      full_len: message.full_len ?? String(message.text || "").length,
+      generating: message.generating === true,
+      elapsed_ms: message.elapsed_ms,
+    });
+    return;
+  }
   if (message?.type === "PREVIEW_DRAFT_UPDATED") {
+    void setPreviewCaptureMode(false);
     void Promise.all([loadPreviewFromStorage(), consumeOpenToPreview()]).then(async () => {
       if (activeTab !== "Preview") {
         activeTab = "Preview";

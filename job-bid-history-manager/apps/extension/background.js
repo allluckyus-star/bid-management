@@ -13,6 +13,71 @@ const CHATGPT_URL_PATTERNS = [
 ];
 const HISTORY_KEY = "captureHistory";
 const MAX_CAPTURE_HISTORY = 5;
+const CAPTION_POLL_MS =
+  typeof JBHM_CONFIG !== "undefined" && JBHM_CONFIG.CAPTION_POLL_MS
+    ? JBHM_CONFIG.CAPTION_POLL_MS
+    : 150;
+const CAPTION_POLL_MAX_MS =
+  typeof JBHM_CONFIG !== "undefined" && JBHM_CONFIG.CAPTION_POLL_MAX_MS
+    ? JBHM_CONFIG.CAPTION_POLL_MAX_MS
+    : 180_000;
+
+/** Polls ChatGPT tab; forwards to panel only when caption text changes. */
+let captionPollState = null;
+
+function stopCaptionPoll() {
+  if (!captionPollState) return;
+  if (captionPollState.timer) clearTimeout(captionPollState.timer);
+  captionPollState = null;
+}
+
+async function tickCaptionPoll() {
+  const state = captionPollState;
+  if (!state) return;
+
+  const elapsed = Date.now() - state.startedAt;
+  if (elapsed > CAPTION_POLL_MAX_MS) {
+    stopCaptionPoll();
+    void setPreviewCaptureMode(false);
+    chrome.runtime.sendMessage({ type: "PREVIEW_CAPTURE_DONE", ok: false, reason: "timeout" }).catch(() => {});
+    return;
+  }
+
+  try {
+    const res = await sendToChatGptTab(state.tabId, { type: "GET_ASSISTANT_CAPTION_RAW" });
+    if (res?.status === "ok") {
+      const text = String(res.text || "");
+      if (text !== state.lastCaption) {
+        state.lastCaption = text;
+        chrome.runtime
+          .sendMessage({
+            type: "GPT_CAPTION_UPDATE",
+            text,
+            full_len: text.length,
+            generating: res.generating === true,
+            elapsed_ms: elapsed,
+          })
+          .catch(() => {});
+      }
+    }
+  } catch {
+    /* ChatGPT tab closed or script unavailable */
+  }
+
+  state.timer = setTimeout(tickCaptionPoll, CAPTION_POLL_MS);
+}
+
+function startCaptionPoll(tabId) {
+  if (!tabId) return;
+  stopCaptionPoll();
+  captionPollState = {
+    tabId,
+    lastCaption: "",
+    startedAt: Date.now(),
+    timer: null,
+  };
+  void tickCaptionPoll();
+}
 
 const GENERIC_TOAST_TITLES = new Set([
   "job bid history",
@@ -761,6 +826,7 @@ async function downloadManualDocxFromGptText(text, tabId) {
 
 async function submitGptResultText(text, opts = {}) {
   if (opts.previewOnly || (await isPreviewCaptureMode())) {
+    stopCaptionPoll();
     await setPreviewCaptureMode(false);
     // Merge GPT result into the existing preview draft so extracted fields are kept.
     const existing = (await getPreviewDraft()) || {};
@@ -1169,13 +1235,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           if (!chatId) throw new Error("Open ChatGPT in a tab first.");
           tab = { id: chatId };
         }
-        if (message.previewOnly) await setPreviewCaptureMode(true);
+        if (message.previewOnly) {
+          await setPreviewCaptureMode(true);
+        }
         await pasteAndSubmitOnTab(
           tab.id,
           String(message.text || ""),
           message.autoCapture !== false,
           message.manualOnly === true,
         );
+        if (message.previewOnly) {
+          startCaptionPoll(tab.id);
+        }
         sendResponse({ status: "ok" });
       } catch (err) {
         sendResponse({ status: "error", detail: err?.message || String(err) });
@@ -1312,6 +1383,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({ status: "error", detail: err?.message || String(err) });
       }
     })();
+    return true;
+  }
+
+  if (type === "PREVIEW_CAPTURE_DONE") {
+    stopCaptionPoll();
+    void setPreviewCaptureMode(false);
+    sendResponse({ ok: true });
     return true;
   }
 

@@ -23,6 +23,9 @@ const JBHM_CONFIG = {
   PROMPT_WARN_CHARS: 24000,
   /** Groq models (Preview tab picker; keys still rotate from groq-keys.local.js). */
   DEFAULT_GROQ_MODEL: "llama-3.1-8b-instant",
+  /** Background polls ChatGPT caption while Preview capture is active (ms). */
+  CAPTION_POLL_MS: 150,
+  CAPTION_POLL_MAX_MS: 180_000,
   GROQ_MODEL_OPTIONS: [
     { id: "llama-3.1-8b-instant", label: "Llama 3.1 8B Instant" },
     { id: "llama-3.3-70b-versatile", label: "Llama 3.3 70B Versatile" },

@@ -20,6 +20,23 @@ describe("buildReviewedExtraction", () => {
     expect(out.location).toBe("Remote");
   });
 
+  it("prefers jd_text over captured_text for cleaned_job_description", () => {
+    const jd = "Responsibilities:\n- Build APIs\n".repeat(10);
+    const gptJson = JSON.stringify({ personal_info: { name: "Test" } });
+    const out = buildReviewedExtraction(
+      {
+        client_reviewed: true,
+        jd_text: jd,
+        job_title: "Engineer",
+      },
+      gptJson,
+      "Engineer",
+      "https://example.com/jobs/2",
+    );
+    expect(out.cleaned_job_description?.trim()).toBe(jd.trim());
+    expect(out.cleaned_job_description).not.toContain("personal_info");
+  });
+
   it("rejects oversized company", () => {
     const err = validateReviewedFieldLengths({
       company_name: "x".repeat(300),
