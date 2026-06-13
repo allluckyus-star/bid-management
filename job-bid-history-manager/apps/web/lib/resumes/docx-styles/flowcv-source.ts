@@ -119,17 +119,15 @@ function textRun(
   text: string,
   opts?: { pt?: number; bold?: boolean; italic?: boolean; color?: string; inherit?: boolean },
 ) {
-  const run: ConstructorParameters<typeof TextRun>[0] = {
+  return new TextRun({
     text: text || " ",
     color: opts?.color ?? "000000",
     bold: opts?.bold,
     italics: opts?.italic,
-  };
-  if (!opts?.inherit) {
-    run.font = FONT;
-    run.size = ptToHalfPoints(opts?.pt ?? BODY_SIZE_PT);
-  }
-  return new TextRun(run);
+    ...(opts?.inherit
+      ? {}
+      : { font: FONT, size: ptToHalfPoints(opts?.pt ?? BODY_SIZE_PT) }),
+  });
 }
 
 function sortSections(sections: Record<string, Record<string, unknown>>): Array<Record<string, unknown>> {
