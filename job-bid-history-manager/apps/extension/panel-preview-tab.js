@@ -1,8 +1,7 @@
 /**
  * Preview tab — edit fields before sending accepted data to server.
- * Fields are filled by AI extraction (right-click "Capture this page" or the
- * selection "Extract to Preview" button). The JD textarea here is independent
- * from the JD Source tab. Accept unlocks after a ChatGPT result exists.
+ * Fields are filled by local Groq AI extraction (no JBHM server). Accept sends
+ * the reviewed result to the dashboard only when the user clicks Accept.
  */
 
 function emptyPreviewDraft() {
@@ -15,6 +14,7 @@ function emptyPreviewDraft() {
     tags: "",
     resume_path: "",
     jd_text: "",
+    manual_name: "",
     gpt_text: "",
     notes: "",
     status: "applied",
@@ -22,6 +22,14 @@ function emptyPreviewDraft() {
     page_title: "",
     saving: false,
   };
+}
+
+function previewAcceptMissingFields(draft) {
+  const missing = [];
+  if (!cleanedPreviewValue(draft?.job_title)) missing.push("Job title");
+  if (!cleanedPreviewValue(draft?.company_name)) missing.push("Company");
+  if (!cleanedPreviewValue(draft?.jd_text)) missing.push("Job description");
+  return missing;
 }
 
 function groqModelSelectHtml(selectedId) {
@@ -44,21 +52,17 @@ function previewTabHtml() {
   const p = state.previewDraft || emptyPreviewDraft();
   const jdText = p.jd_text || "";
   const jdLen = jdText.replace(/^-$/, "").trim().length;
-  const hint = captureReadinessHint();
-  const backendDown = state.status?.configured && !state.status?.connected;
-  const hasGpt = (p.gpt_text || "").trim().length > 0;
-  const canSave = !p.saving && !backendDown && state.status?.username_validated && hasGpt;
+  const acceptHint = dashboardAcceptHint();
+  const acceptDisabled = Boolean(p.saving);
 
   return `
-    ${hint ? `<div class="banner ${hint.type}">${escapeHtml(hint.text)}</div>` : ""}
-    ${backendDown ? `<div class="banner err">Backend unavailable — fix token in Settings.</div>` : ""}
     <section class="settings-section">
       ${groqModelSelectHtml(state.groqModel)}
       <div class="row" style="justify-content:space-between;align-items:center;margin-top:12px">
         <h2 style="margin:0">Preview before saving</h2>
         <span class="badge warn">Edit then accept</span>
       </div>
-      <p class="hint">Right-click a job page → <strong>Capture this page</strong>, or select text → <strong>Extract to Preview</strong>. Empty fields are filled with "-". Accept unlocks after you build the ChatGPT prompt. Use <strong>Dashboard</strong> in the footer to open the web app.</p>
+      <p class="hint">AI extract/clean uses <strong>Groq directly in the extension</strong> (your API keys) — JD text is not sent to the JBHM server until you Accept. Right-click <strong>Capture this page</strong>, or select text → <strong>Extract</strong> / <strong>JD</strong> / <strong>Name</strong>.</p>
       <div class="capture-grid">
         <label class="label" for="prevTitle">Job title</label>
         <input id="prevTitle" class="input" value="${escapeHtml(p.job_title)}" />
@@ -78,13 +82,17 @@ function previewTabHtml() {
       </div>
       <label class="label" for="prevNotes">Notes</label>
       <textarea id="prevNotes" class="textarea" style="min-height:56px">${escapeHtml(p.notes)}</textarea>
+      <label class="label" for="prevManualName">Manual name</label>
+      <input id="prevManualName" class="input manual-name-input" value="${escapeHtml(p.manual_name || "")}" placeholder="Label for this JD (filename / dashboard)" />
       <label class="label" for="prevJdText">Job description (extracted)</label>
       <p class="muted">${jdLen.toLocaleString()} characters</p>
       <textarea id="prevJdText" class="textarea source-editor jd-editor-tall" placeholder="Extracted job description appears here…">${escapeHtml(jdText)}</textarea>
-      <button type="button" class="btn primary upload-block-btn" id="previewAcceptBtn" ${canSave ? "" : "disabled"}>
+      <input type="file" id="previewJdFileInput" accept=".txt,.md,.docx,.pdf,text/plain" hidden />
+      <button type="button" class="btn upload-block-btn" id="previewJdUploadBtn">Upload JD</button>
+      <button type="button" class="btn primary upload-block-btn" id="previewAcceptBtn" ${acceptDisabled ? "disabled" : ""}>
         ${p.saving ? "Saving…" : "Accept & send to dashboard"}
       </button>
-      ${hasGpt ? "" : `<p class="muted" style="text-align:center">Accept enables once a ChatGPT result is captured.</p>`}
+      ${acceptHint ? `<p class="muted" style="text-align:center;margin-top:8px">${escapeHtml(acceptHint.text)}</p>` : ""}
     </section>
   `;
 }
@@ -104,6 +112,7 @@ function syncPreviewFromInputs(root) {
   set("#prevResumePath", "resume_path");
   set("#prevSourceUrl", "source_url");
   set("#prevNotes", "notes");
+  set("#prevManualName", "manual_name");
   set("#prevJdText", "jd_text");
 }
 
@@ -113,63 +122,106 @@ function cleanedPreviewValue(value) {
 }
 
 async function acceptPreviewToDashboard(force = false) {
-  syncPreviewFromInputs(contentEl);
-  const p = state.previewDraft;
-  await savePreviewDraft(p);
+  try {
+    syncPreviewFromInputs(contentEl);
+    const p = state.previewDraft;
 
-  const jdText = cleanedPreviewValue(p.jd_text);
-  const gptText = String(p.gpt_text || "").trim();
-  const maxChars = JBHM_CONFIG.MAX_CAPTURE_TEXT_CHARS || 30000;
-  const jdForSave = jdText.slice(0, maxChars);
-  // Dashboard "View JD" must store the job description — not the ChatGPT resume JSON.
-  const capturedText =
-    jdForSave.length >= 80
-      ? jdForSave
-      : gptText.slice(0, maxChars);
-
-  if (capturedText.length < 80) {
-    setInlineBanner("Need a job description (80+ chars) before saving.", "err");
-    return;
-  }
-
-  p.saving = true;
-  await renderContent();
-
-  const res = await send("CAPTURE_REVIEWED_SAVE", {
-    forceCapture: force,
-    reviewed: {
-      client_reviewed: true,
-      captured_text: jdForSave.length >= 80 ? jdForSave : capturedText,
-      jd_text: jdForSave,
-      source_url: p.source_url || state.page?.url || "",
-      page_title: p.page_title || cleanedPreviewValue(p.job_title) || state.page?.title || "",
-      capture_method: p.capture_method || "preview-accept",
-      extraction_source: "preview-accept",
-      job_title: cleanedPreviewValue(p.job_title),
-      company_name: cleanedPreviewValue(p.company_name),
-      location: cleanedPreviewValue(p.location),
-      salary_text: cleanedPreviewValue(p.salary_text),
-      employment_type: cleanedPreviewValue(p.employment_type),
-      tags: cleanedPreviewValue(p.tags),
-      notes: cleanedPreviewValue(p.notes),
-      resume_path: cleanedPreviewValue(p.resume_path),
-    },
-  });
-
-  p.saving = false;
-  if (!res?.ok) {
-    if (res?.duplicate && !force) {
-      const retry = window.confirm(`${res.error}\n\nSave again anyway?`);
-      if (retry) return acceptPreviewToDashboard(true);
+    const missing = previewAcceptMissingFields(p);
+    if (missing.length) {
+      setInlineBanner(`Cannot send — missing: ${missing.join(", ")}.`, "err");
+      return;
     }
-    setInlineBanner(res?.error || "Save failed.", "err");
+
+    const jdText = cleanedPreviewValue(p.jd_text);
+    const manualName = cleanedPreviewValue(p.manual_name);
+    const maxChars = JBHM_CONFIG.MAX_CAPTURE_TEXT_CHARS || 30000;
+    const jdForSave = jdText.slice(0, maxChars);
+    const capturedText = jdForSave;
+
+    const s = state.status || {};
+    if (!s.configured || !s.connected) {
+      setInlineBanner("Add a valid capture token in Settings before sending to the dashboard.", "err");
+      await navigateToSection("Settings");
+      return;
+    }
+    if (!s.username_validated) {
+      setInlineBanner("Validate username in Settings before sending to the dashboard.", "err");
+      await navigateToSection("Settings");
+      return;
+    }
+
+    try {
+      await savePreviewDraft(p);
+    } catch (err) {
+      if (!isExtensionContextInvalidatedError(err)) throw err;
+    }
+
+    if (manualName) {
+      try {
+        const jdLocal = await getLocalJdSource();
+        await saveLocalJdSource({
+          text: jdText || jdLocal?.text || "",
+          title: manualName,
+          sourceUrl: p.source_url || jdLocal?.sourceUrl || "",
+          sourceDomain: jdLocal?.sourceDomain || "",
+          sourceMode: jdLocal?.sourceMode || "manual",
+          pageTitle: p.page_title || jdLocal?.pageTitle || "",
+          inputMode: jdLocal?.inputMode || "text",
+          useLatestBid: jdLocal?.useLatestBid === true,
+        });
+      } catch (err) {
+        if (!isExtensionContextInvalidatedError(err)) throw err;
+      }
+    }
+
+    p.saving = true;
     await renderContent();
-    return;
+
+    const res = await send("CAPTURE_REVIEWED_SAVE", {
+      forceCapture: force,
+      reviewed: {
+        client_reviewed: true,
+        captured_text: jdForSave.length >= 80 ? jdForSave : capturedText,
+        jd_text: jdForSave,
+        source_url: p.source_url || state.page?.url || "",
+        page_title: p.page_title || cleanedPreviewValue(p.job_title) || state.page?.title || "",
+        capture_method: p.capture_method || "preview-accept",
+        extraction_source: "preview-accept",
+        job_title: cleanedPreviewValue(p.job_title),
+        company_name: cleanedPreviewValue(p.company_name),
+        location: cleanedPreviewValue(p.location),
+        salary_text: cleanedPreviewValue(p.salary_text),
+        employment_type: cleanedPreviewValue(p.employment_type),
+        tags: cleanedPreviewValue(p.tags),
+        notes: cleanedPreviewValue(p.notes),
+        resume_path: cleanedPreviewValue(p.resume_path),
+      },
+    });
+
+    p.saving = false;
+    if (!res?.ok) {
+      if (res?.duplicate && !force) {
+        const retry = window.confirm(`${res.error}\n\nSave again anyway?`);
+        if (retry) return acceptPreviewToDashboard(true);
+      }
+      setInlineBanner(res?.error || res?.detail || "Save failed.", "err");
+      await renderContent();
+      return;
+    }
+
+    state.previewDraft = emptyPreviewDraft();
+    try {
+      await clearPreviewDraft();
+    } catch (err) {
+      if (!isExtensionContextInvalidatedError(err)) throw err;
+    }
+    await renderContent();
+    setInlineBanner("Saved to dashboard. Preview cleared.", "ok");
+  } catch (err) {
+    if (state.previewDraft) state.previewDraft.saving = false;
+    setInlineBanner(err?.message || "Accept failed.", "err");
+    await renderContent();
   }
-  state.previewDraft = emptyPreviewDraft();
-  await clearPreviewDraft();
-  await renderContent();
-  setInlineBanner(res.result?.message || "Saved to dashboard. Preview cleared.", "ok");
 }
 
 async function loadPreviewFromStorage() {
@@ -179,15 +231,58 @@ async function loadPreviewFromStorage() {
   } else {
     state.previewDraft = state.previewDraft || emptyPreviewDraft();
   }
+  const previewJd = String(state.previewDraft.jd_text || "").replace(/^-$/, "").trim();
+  if (!previewJd) {
+    const jdLocal = await getLocalJdSource();
+    if (String(jdLocal?.text || "").trim()) {
+      state.previewDraft.jd_text = jdLocal.text;
+    }
+  }
   if (!state.resumeLocalText) {
     state.resumeLocalText = await getLocalResumeText();
+  }
+}
+
+async function handlePreviewJdFileUpload(file) {
+  const btn = document.getElementById("previewJdUploadBtn");
+  const prevLabel = btn?.textContent;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Reading…";
+  }
+  try {
+    const text = String(await readUploadedFileText(file)).trim();
+    if (!text) throw new Error("File had no readable text.");
+    const maxChars = JBHM_CONFIG.MAX_CAPTURE_TEXT_CHARS || 30000;
+    const clipped = text.slice(0, maxChars);
+    const title = extractTextFromUploadFile.fileBaseName(file.name);
+    if (!state.previewDraft) state.previewDraft = emptyPreviewDraft();
+    state.previewDraft.jd_text = clipped;
+    await saveLocalJdSource({
+      text: clipped,
+      title,
+      sourceMode: "upload",
+      sourceUrl: state.page?.url || "",
+      sourceDomain: state.page?.domain || "",
+      pageTitle: state.page?.title || "",
+    });
+    await savePreviewDraft(state.previewDraft);
+    setInlineBanner("Job description replaced from file.", "ok");
+    await renderContent();
+  } catch (err) {
+    setInlineBanner(err?.message || "Upload failed.", "err");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = prevLabel || "Upload JD";
+    }
   }
 }
 
 function wirePreviewTabActions() {
   contentEl
     .querySelectorAll(
-      "#prevTitle, #prevCompany, #prevLocation, #prevSalary, #prevTags, #prevResumePath, #prevSourceUrl, #prevNotes, #prevJdText",
+      "#prevTitle, #prevCompany, #prevLocation, #prevSalary, #prevTags, #prevResumePath, #prevSourceUrl, #prevNotes, #prevManualName, #prevJdText",
     )
     .forEach((el) => {
       el.addEventListener("input", () => {
@@ -199,6 +294,14 @@ function wirePreviewTabActions() {
   document
     .getElementById("previewAcceptBtn")
     ?.addEventListener("click", () => void acceptPreviewToDashboard(false));
+
+  const jdFileInput = document.getElementById("previewJdFileInput");
+  document.getElementById("previewJdUploadBtn")?.addEventListener("click", () => jdFileInput?.click());
+  jdFileInput?.addEventListener("change", () => {
+    const file = jdFileInput.files?.[0];
+    jdFileInput.value = "";
+    if (file) void handlePreviewJdFileUpload(file);
+  });
 
   document.getElementById("previewGroqModel")?.addEventListener("change", (e) => {
     const next = normalizeGroqModel(e.target.value);

@@ -1,7 +1,7 @@
 /** @typedef {"production" | "local"} ApiEnvironment */
 
 const JBHM_CONFIG = {
-  EXTENSION_VERSION: "0.8.45",
+  EXTENSION_VERSION: "0.8.75",
   PRODUCTION_URL: "https://velvety-naiad-90a2b9.netlify.app",
   LOCAL_URL: "http://localhost:3000",
   DEFAULT_ENV: "production",
@@ -15,8 +15,6 @@ const JBHM_CONFIG = {
   MAX_CAPTURE_TEXT_CHARS: 30000,
   /** Extension status cache TTL (popup/panel). */
   STATUS_CACHE_TTL_MS: 5 * 60 * 1000,
-  /** Username validation cache TTL. */
-  USERNAME_VALIDATION_CACHE_TTL_MS: 10 * 60 * 1000,
   /** Block duplicate capture for the same URL within this window. */
   DUPLICATE_CAPTURE_MS: 30 * 1000,
   /** Warn when local prompt exceeds this size. */
@@ -26,6 +24,14 @@ const JBHM_CONFIG = {
   /** Background polls ChatGPT caption while Preview capture is active (ms). */
   CAPTION_POLL_MS: 150,
   CAPTION_POLL_MAX_MS: 180_000,
+  DEFAULT_DOCX_STYLE: "calibri",
+  DOCX_STYLE_OPTIONS: [
+    { id: "calibri", label: "Calibri (default)" },
+    { id: "chad-taylor", label: "Professional Times" },
+    { id: "chad-taylor-pdf", label: "Roboto" },
+    { id: "flowcv", label: "FlowCV Modern" },
+    { id: "flowcv-source", label: "FlowCV Source Sans" },
+  ],
   GROQ_MODEL_OPTIONS: [
     { id: "llama-3.1-8b-instant", label: "Llama 3.1 8B Instant" },
     { id: "llama-3.3-70b-versatile", label: "Llama 3.3 70B Versatile" },

@@ -343,3 +343,18 @@ OUTPUT FORMAT
 </CURRENT_RESUME>`;
 
 const LOCKED_PROMPT_SUFFIX_PREVIEW = LOCKED_PROMPT_SUFFIX;
+
+const LOCKED_PROMPT_PROJECT_LINE =
+  'For each experience item, include "project" (a one-line description of the main project or product the person worked on, e.g. "Internal ML Platform for real-time inference"). Omit "project" only if no meaningful project name can be inferred from the resume or role context.\n\n';
+
+const LOCKED_PROMPT_PROJECT_JSON =
+  '            "project": "Main project or product worked on (one concise line, or omit if not applicable)",\n';
+
+/** @param {boolean} [includeProject=true] */
+function getLockedPromptSuffix(includeProject = true) {
+  if (includeProject !== false) return LOCKED_PROMPT_SUFFIX;
+  return LOCKED_PROMPT_SUFFIX.replace(LOCKED_PROMPT_PROJECT_LINE, "").replace(
+    LOCKED_PROMPT_PROJECT_JSON,
+    "",
+  );
+}

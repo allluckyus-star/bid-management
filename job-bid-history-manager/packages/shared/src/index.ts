@@ -152,9 +152,6 @@ export type ColumnValueOption = { value: string; count: number };
 
 export type ColumnValuesResponse = { field: string; values: ColumnValueOption[] };
 
-/** @deprecated use JobColumnSearch */
-export type JobColumnFilters = JobColumnSearch;
-
 export type JobFilters = {
   q?: string;
   tags?: string[];

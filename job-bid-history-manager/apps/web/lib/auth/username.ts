@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { usernameOwnedByUser } from "@/lib/auth/profile-usernames";
+
 export function normalizeUsername(input: string): string {
   return String(input ?? "").trim().toLowerCase();
 }
@@ -41,41 +43,13 @@ export async function resolveValidatedUsernameForToken(
     return { ok: false, status: 403, error: "Profile not found for token owner." };
   }
 
-  const current = normalizeUsername(own.username ?? "");
-  if (!current) {
+  const owned = await usernameOwnedByUser(admin, userId, username);
+  if (!owned) {
     return {
       ok: false,
       status: 403,
       error:
-        "No username is registered for this account. Register your username in the web dashboard first.",
-    };
-  }
-  if (current !== username) {
-    return {
-      ok: false,
-      status: 403,
-      error:
-        "Username is not registered for this account. Update extension settings with your registered username.",
-    };
-  }
-
-  const { data: ownerByUsername } = await admin
-    .from("profiles")
-    .select("id")
-    .eq("username", username)
-    .maybeSingle();
-  if (!ownerByUsername) {
-    return {
-      ok: false,
-      status: 404,
-      error: "Username is not registered for this account.",
-    };
-  }
-  if (ownerByUsername.id !== userId) {
-    return {
-      ok: false,
-      status: 403,
-      error: "Username is not registered for this account.",
+        "Username is not registered for this account. Add it in the web dashboard first, then validate in the extension.",
     };
   }
 

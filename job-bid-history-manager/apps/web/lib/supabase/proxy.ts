@@ -49,7 +49,10 @@ export async function updateSession(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isPublicApi =
-    path.startsWith("/api/capture/") || path === "/api/capture/job";
+    path.startsWith("/api/capture/") ||
+    path === "/api/capture/job" ||
+    path.startsWith("/api/extension/") ||
+    (path.startsWith("/api/team/") && path.includes("/extension/"));
 
   if (isPublicApi) {
     return supabaseResponse;

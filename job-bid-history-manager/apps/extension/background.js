@@ -4,7 +4,17 @@ try {
 } catch (_e) {
   // groq-keys.local.js is optional (gitignored). Copy groq-keys.local.example.js to enable AI.
 }
-importScripts("groq-router.js", "groq-client.js", "storage.js", "local-storage.js", "api.js", "download-path.js");
+importScripts(
+  "groq-router.js",
+  "groq-client.js",
+  "storage.js",
+  "local-storage.js",
+  "api.js",
+  "download-path.js",
+  "vendor/jszip.min.js",
+  "file-text-extract.js",
+  "vendor/docx-render.bundle.js",
+);
 
 const CHATGPT_URL_PATTERNS = [
   "https://chatgpt.com/*",
@@ -155,14 +165,44 @@ function migratePromptTemplate() {
   });
 }
 
+async function reloadWorkspacePanelsInTabs() {
+  let tabs = [];
+  try {
+    tabs = await chrome.tabs.query({});
+  } catch {
+    return;
+  }
+  for (const tab of tabs) {
+    if (!tab?.id || !tab.url || !/^https?:/i.test(tab.url)) continue;
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => {
+          const iframe = document.getElementById("jbhm-workspace-iframe");
+          if (!(iframe instanceof HTMLIFrameElement)) return;
+          try {
+            iframe.src = chrome.runtime.getURL("panel.html");
+          } catch {
+            /* stale content script — user must refresh the tab */
+          }
+        },
+      });
+    } catch {
+      /* tab may not allow injection */
+    }
+  }
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   setupContextMenu();
   migratePromptTemplate();
+  void reloadWorkspacePanelsInTabs();
 });
 
 chrome.runtime.onStartup.addListener(() => {
   setupContextMenu();
   migratePromptTemplate();
+  void reloadWorkspacePanelsInTabs();
 });
 
 function hasContent(pageData) {
@@ -335,8 +375,36 @@ function dashIfEmpty(value) {
   return s || "-";
 }
 
-/** Run Groq extraction on text and write the result into the Preview draft (no DB save). */
-async function extractAndFillPreview({ tabId, capturedText, sourceUrl, pageTitle, captureMethod }) {
+function isPreviewFieldBlank(value) {
+  const s = String(value ?? "").trim();
+  return !s || s === "-";
+}
+
+function extractedPreviewFields(ex, capturedText) {
+  const tags = Array.isArray(ex?.tag_names) ? ex.tag_names.filter(Boolean).join(", ") : "";
+  return {
+    job_title: dashIfEmpty(ex?.job_title),
+    company_name: dashIfEmpty(ex?.company_name),
+    location: dashIfEmpty(ex?.location),
+    salary_text: dashIfEmpty(ex?.salary_text),
+    employment_type: dashIfEmpty(ex?.employment_type),
+    tags: dashIfEmpty(tags),
+    jd_text: String(ex?.cleaned_job_description || capturedText || "").trim() || "-",
+  };
+}
+
+/**
+ * Run Groq extraction locally (direct API key) and write into Preview — never sends JD to JBHM server.
+ * @param {{ mergeMode?: "replace" | "merge_empty" | "jd_only" }} opts
+ */
+async function extractAndFillPreview({
+  tabId,
+  capturedText,
+  sourceUrl,
+  pageTitle,
+  captureMethod,
+  mergeMode = "replace",
+}) {
   if (!groqHasKeys()) {
     return {
       ok: false,
@@ -357,29 +425,68 @@ async function extractAndFillPreview({ tabId, capturedText, sourceUrl, pageTitle
     return { ok: false, error: err?.message || "Extraction failed." };
   }
 
-  const ex = res?.extraction || {};
-  const tags = Array.isArray(ex.tag_names) ? ex.tag_names.filter(Boolean).join(", ") : "";
-  const previewFields = {
-    job_title: dashIfEmpty(ex.job_title),
-    company_name: dashIfEmpty(ex.company_name),
-    location: dashIfEmpty(ex.location),
-    salary_text: dashIfEmpty(ex.salary_text),
-    employment_type: dashIfEmpty(ex.employment_type),
-    tags: dashIfEmpty(tags),
-  };
+  const extracted = extractedPreviewFields(res?.extraction || {}, text);
+  const existing = (await getPreviewDraft()) || {};
+  const mode = mergeMode === "jd_only" || mergeMode === "merge_empty" ? mergeMode : "replace";
 
-  await savePreviewDraft({
-    ...previewFields,
-    jd_text: String(ex.cleaned_job_description || text || "").trim() || "-",
-    // Resume path is set only after the resume is generated from the GPT result.
-    resume_path: "",
-    notes: "",
-    gpt_text: "",
-    status: "applied",
-    source_url: sourceUrl || "",
-    page_title: pageTitle || "",
-    capture_method: captureMethod || "capture",
-  });
+  let previewFields;
+  if (mode === "jd_only") {
+    previewFields = {
+      ...existing,
+      jd_text: extracted.jd_text,
+      source_url: sourceUrl || existing.source_url || "",
+      page_title: pageTitle || existing.page_title || "",
+      capture_method: captureMethod || existing.capture_method || "selection-jd",
+    };
+  } else if (mode === "merge_empty") {
+    previewFields = {
+      ...existing,
+      job_title: isPreviewFieldBlank(existing.job_title) ? extracted.job_title : existing.job_title,
+      company_name: isPreviewFieldBlank(existing.company_name)
+        ? extracted.company_name
+        : existing.company_name,
+      location: isPreviewFieldBlank(existing.location) ? extracted.location : existing.location,
+      salary_text: isPreviewFieldBlank(existing.salary_text)
+        ? extracted.salary_text
+        : existing.salary_text,
+      employment_type: isPreviewFieldBlank(existing.employment_type)
+        ? extracted.employment_type
+        : existing.employment_type,
+      tags: isPreviewFieldBlank(existing.tags) ? extracted.tags : existing.tags,
+      jd_text: extracted.jd_text,
+      source_url: sourceUrl || existing.source_url || "",
+      page_title: pageTitle || existing.page_title || "",
+      capture_method: captureMethod || existing.capture_method || "upload",
+    };
+  } else {
+    previewFields = {
+      ...extracted,
+      resume_path: "",
+      notes: "",
+      gpt_text: "",
+      status: "applied",
+      source_url: sourceUrl || "",
+      page_title: pageTitle || "",
+      capture_method: captureMethod || "capture",
+    };
+  }
+
+  await savePreviewDraft(previewFields);
+
+  const jdSaved = String(previewFields.jd_text || "").replace(/^-$/, "").trim();
+  if (jdSaved) {
+    const jdLocal = (await getLocalJdSource()) || {};
+    await saveLocalJdSource({
+      text: jdSaved,
+      title: String(previewFields.manual_name || existing.manual_name || jdLocal.title || "").trim(),
+      sourceUrl: previewFields.source_url || jdLocal.sourceUrl || "",
+      sourceDomain: jdLocal.sourceDomain || "",
+      sourceMode: captureMethod || jdLocal.sourceMode || "extract",
+      pageTitle: previewFields.page_title || jdLocal.pageTitle || "",
+      inputMode: jdLocal.inputMode || "text",
+      useLatestBid: jdLocal.useLatestBid === true,
+    });
+  }
 
   await setOpenToPreview(true);
   if (tabId) {
@@ -392,6 +499,69 @@ async function extractAndFillPreview({ tabId, capturedText, sourceUrl, pageTitle
   await sleep(350);
   chrome.runtime.sendMessage({ type: "PREVIEW_DRAFT_UPDATED" }).catch(() => {});
   return { ok: true, model: res?.model };
+}
+
+/** Write selected text into the Preview tab (JD body or manual name). */
+async function fillPreviewFromSelection({ field, text, sourceUrl, pageTitle, tabId }) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) return { ok: false, error: "Empty selection." };
+
+  const existing = (await getPreviewDraft()) || {};
+  const maxChars = JBHM_CONFIG.MAX_CAPTURE_TEXT_CHARS || 30000;
+  const jdLocal = (await getLocalJdSource()) || {};
+
+  if (field === "jd") {
+    const jdText = trimmed.slice(0, maxChars);
+    await savePreviewDraft({
+      ...existing,
+      jd_text: jdText,
+      source_url: sourceUrl || existing.source_url || "",
+      page_title: pageTitle || existing.page_title || "",
+    });
+    await saveLocalJdSource({
+      text: jdText,
+      title: String(existing.manual_name || jdLocal.title || "").trim(),
+      sourceUrl: sourceUrl || jdLocal.sourceUrl || "",
+      sourceDomain: jdLocal.sourceDomain || "",
+      sourceMode: "selection",
+      pageTitle: pageTitle || jdLocal.pageTitle || "",
+      inputMode: jdLocal.inputMode || "text",
+      useLatestBid: jdLocal.useLatestBid === true,
+    });
+  } else if (field === "manual_name") {
+    const name = trimmed.slice(0, 120);
+    await savePreviewDraft({
+      ...existing,
+      manual_name: name,
+    });
+    await saveLocalJdSource({
+      text: String(existing.jd_text || jdLocal.text || "").trim(),
+      title: name,
+      sourceUrl: jdLocal.sourceUrl || sourceUrl || "",
+      sourceDomain: jdLocal.sourceDomain || "",
+      sourceMode: jdLocal.sourceMode || "manual",
+      pageTitle: jdLocal.pageTitle || pageTitle || "",
+      inputMode: jdLocal.inputMode || "text",
+      useLatestBid: jdLocal.useLatestBid === true,
+    });
+  } else {
+    return { ok: false, error: "Invalid field." };
+  }
+
+  await setOpenToPreview(true);
+  if (tabId) {
+    try {
+      await sendWorkspaceMessage(tabId, { type: "OPEN_WORKSPACE" });
+    } catch {
+      /* panel may already be open */
+    }
+  }
+  chrome.runtime.sendMessage({
+    type: "PREVIEW_DRAFT_UPDATED",
+    fillOnly: true,
+    field,
+  }).catch(() => {});
+  return { ok: true };
 }
 
 async function captureActiveTab(tabId, options = {}) {
@@ -506,14 +676,99 @@ async function appendCaptureHistory(row) {
   await chrome.storage.local.set({ [HISTORY_KEY]: next });
 }
 
+async function mergeRegisteredUsernames(...sources) {
+  const seen = new Set();
+  const out = [];
+  for (const src of sources) {
+    const list = Array.isArray(src) ? src : src ? [src] : [];
+    for (const raw of list) {
+      const name = String(raw || "").trim().toLowerCase();
+      if (name && !seen.has(name)) {
+        seen.add(name);
+        out.push(name);
+      }
+    }
+  }
+  return out;
+}
+
+function inferApiEnvFromPageUrl(pageUrl) {
+  const raw = String(pageUrl || "").trim();
+  if (!raw) return null;
+  try {
+    const host = new URL(raw).hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1") return "local";
+    const prodHost = new URL(JBHM_CONFIG.PRODUCTION_URL).hostname.toLowerCase();
+    if (host === prodHost) return "production";
+  } catch (_) {
+    /* ignore invalid URLs */
+  }
+  return null;
+}
+
+function alternateApiBaseUrl(baseUrl) {
+  const normalized = String(baseUrl || "").replace(/\/$/, "");
+  const localUrl = JBHM_CONFIG.LOCAL_URL.replace(/\/$/, "");
+  const prodUrl = JBHM_CONFIG.PRODUCTION_URL.replace(/\/$/, "");
+  if (normalized === localUrl) return prodUrl;
+  if (normalized === prodUrl) return localUrl;
+  return null;
+}
+
+async function fetchUsernamesFromServer(baseUrl, token) {
+  const parts = [];
+  try {
+    const data = await fetchExtensionUsernames(baseUrl, token);
+    parts.push(...(Array.isArray(data.usernames) ? data.usernames : []));
+  } catch (_) {
+    /* optional route on older servers */
+  }
+  try {
+    const me = await fetchExtensionMe(baseUrl, token);
+    parts.push(...(Array.isArray(me.usernames) ? me.usernames : []));
+    if (me.username) parts.push(me.username);
+  } catch (err) {
+    if (!parts.length) throw err;
+  }
+  return mergeRegisteredUsernames(parts);
+}
+
+/** Load all usernames; if primary server returns too few, also try the alternate (local vs production). */
+async function fetchAllRegisteredUsernames(baseUrl, token) {
+  let primary = [];
+  try {
+    primary = await fetchUsernamesFromServer(baseUrl, token);
+  } catch (_) {
+    primary = [];
+  }
+  if (primary.length > 1) return primary;
+  const alt = alternateApiBaseUrl(baseUrl);
+  if (!alt) return primary;
+  try {
+    const secondary = await fetchUsernamesFromServer(alt, token);
+    return mergeRegisteredUsernames(primary, secondary);
+  } catch (_) {
+    return primary;
+  }
+}
+
+async function syncApiEnvFromPageUrl(pageUrl) {
+  const inferred = inferApiEnvFromPageUrl(pageUrl);
+  const settings = await loadExtensionSettings();
+  if (!inferred || settings.apiEnv === inferred) {
+    return { switched: false, apiEnv: settings.apiEnv };
+  }
+  await saveExtensionSettings({ apiEnv: inferred });
+  await clearExtensionStatusCache();
+  return { switched: true, apiEnv: inferred };
+}
+
 async function buildExtensionStatusFromNetwork(settings) {
   const me = await fetchExtensionMe(settings.apiBaseUrl, settings.captureToken);
+  const registeredUsernames = await fetchAllRegisteredUsernames(settings.apiBaseUrl, settings.captureToken);
   const username = settings.username || "";
-  const validationCache = await getUsernameValidationCache(settings);
-  const usernameValid =
-    (Boolean(settings.usernameValidatedAt) || Boolean(validationCache?.validated)) &&
-    isValidUsernameFormat(username) &&
-    username === String(me.username || "").trim().toLowerCase();
+  const registered = new Set(registeredUsernames);
+  const usernameValid = isValidUsernameFormat(username) && registered.has(username);
   return {
     configured: true,
     connected: true,
@@ -524,6 +779,7 @@ async function buildExtensionStatusFromNetwork(settings) {
     email: me.email,
     username,
     username_registered: me.username || null,
+    registered_usernames: registeredUsernames,
     username_validated: usernameValid,
     username_validated_at: settings.usernameValidatedAt || null,
     captured_by: me.captured_by,
@@ -531,8 +787,32 @@ async function buildExtensionStatusFromNetwork(settings) {
   };
 }
 
+const LAST_REGISTERED_USERNAMES_KEY = "lastRegisteredUsernames";
+
+async function buildStatusFromSettingsOnly(settings) {
+  const stored = await chrome.storage.local.get({ [LAST_REGISTERED_USERNAMES_KEY]: [] });
+  const registeredUsernames = Array.isArray(stored[LAST_REGISTERED_USERNAMES_KEY])
+    ? stored[LAST_REGISTERED_USERNAMES_KEY]
+    : [];
+  const username = settings.username || "";
+  const registered = new Set(registeredUsernames.map((u) => String(u || "").trim().toLowerCase()));
+  return {
+    configured: Boolean(settings.captureToken),
+    connected: false,
+    apiBaseUrl: settings.apiBaseUrl,
+    apiEnv: settings.apiEnv,
+    username,
+    registered_usernames: registeredUsernames,
+    username_validated:
+      Boolean(username && settings.usernameValidatedAt) ||
+      (Boolean(username) && registered.has(username)),
+    username_validated_at: settings.usernameValidatedAt || null,
+  };
+}
+
 async function getExtensionStatus(options = {}) {
   const forceRefresh = options.forceRefresh === true;
+  const cacheOnly = options.cacheOnly === true;
   const settings = await loadExtensionSettings();
   if (!settings.captureToken) {
     return {
@@ -540,6 +820,12 @@ async function getExtensionStatus(options = {}) {
       apiBaseUrl: settings.apiBaseUrl,
       apiEnv: settings.apiEnv,
     };
+  }
+
+  if (cacheOnly) {
+    const { status } = await getCachedExtensionStatus();
+    if (status) return status;
+    return buildStatusFromSettingsOnly(settings);
   }
 
   if (!forceRefresh) {
@@ -552,6 +838,9 @@ async function getExtensionStatus(options = {}) {
   try {
     const status = await buildExtensionStatusFromNetwork(settings);
     await setCachedExtensionStatus(status);
+    if (Array.isArray(status.registered_usernames) && status.registered_usernames.length) {
+      await chrome.storage.local.set({ [LAST_REGISTERED_USERNAMES_KEY]: status.registered_usernames });
+    }
     return status;
   } catch (err) {
     const disconnected = {
@@ -754,6 +1043,47 @@ function parseResumeNameFromGptText(text) {
   }
 }
 
+/** Build DOCX locally in the extension (no server round-trip). */
+async function requestRenderDocx(gptText, opts = {}) {
+  if (typeof JBHM_DOCX_RENDER?.renderGptTextToDocx !== "function") {
+    throw new Error(
+      "DOCX renderer not loaded. Rebuild the extension (npm run build:extension-docx).",
+    );
+  }
+
+  const docxStyle = opts.docx_style || (await loadResumeDocxStyle());
+  const { arrayBuffer, filename } = await JBHM_DOCX_RENDER.renderGptTextToDocx(gptText, {
+    jd_label: opts.jd_label,
+    docx_style: docxStyle,
+  });
+
+  const u8 = new Uint8Array(arrayBuffer);
+  const isZip =
+    u8.length >= 4 &&
+    u8[0] === 0x50 &&
+    u8[1] === 0x4b &&
+    (u8[2] === 0x03 || u8[2] === 0x05) &&
+    (u8[3] === 0x04 || u8[3] === 0x06);
+  if (!isZip) {
+    throw new Error("DOCX generation produced an invalid file.");
+  }
+
+  const blob = new Blob([arrayBuffer], {
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  });
+  return { blob, filename };
+}
+
+function buildLocalDownloadMe(settings, status, gptText) {
+  const resumeName = parseResumeNameFromGptText(gptText);
+  return {
+    username: settings.username || status?.username || "local",
+    display_name: resumeName || status?.display_name || "Resume",
+    email: status?.email || null,
+    captured_by: settings.username || status?.captured_by || null,
+  };
+}
+
 /**
  * Render the optimized resume DOCX from the GPT result and download it to:
  *   Downloads/jbhm/username-YYYY-MM-DD/Company-Role/Resume Name.docx
@@ -761,57 +1091,50 @@ function parseResumeNameFromGptText(text) {
  */
 async function renderAndSaveResumeFromGptText(gptText, previewFields) {
   const settings = await loadExtensionSettings();
-  if (!settings.captureToken) throw new Error("Add capture token in Settings.");
-  const status = await getExtensionStatus();
-  if (!status.connected) throw new Error(status.error || "Extension not connected.");
-  const teamId = status.team_id;
-  if (!teamId) throw new Error("Extension token has no team.");
+  const status = settings.captureToken ? await getExtensionStatus().catch(() => ({})) : {};
 
   const company = previewFields?.company_name === "-" ? "" : previewFields?.company_name || "";
   const role = previewFields?.job_title === "-" ? "" : previewFields?.job_title || "";
+  const manualFromPreview =
+    previewFields?.manual_name === "-" ? "" : String(previewFields?.manual_name || "").trim();
 
-  const { blob } = await postRenderDocx(settings.apiBaseUrl, settings.captureToken, teamId, gptText, {
+  const me = buildLocalDownloadMe(settings, status, gptText);
+  const resumeName = parseResumeNameFromGptText(gptText);
+  const resumeText = await getLocalResumeText();
+  const outputTemplate = await loadOutputPathTemplate();
+  const opts = {
+    userName: resumeName,
+    companyName: company,
+    jobTitle: role,
+    resumeText,
+    manualName: manualFromPreview,
+  };
+
+  const ctx = buildOutputPathContext(me, opts);
+  const pathCheck = validateOutputPathTemplateContext(outputTemplate, ctx);
+  if (!pathCheck.ok) throw new Error(pathCheck.error);
+
+  const { blob } = await requestRenderDocx(gptText, {
     jd_label: [company, role].filter(Boolean).join(" - ") || "resume",
   });
 
-  const me = {
-    username: status.username,
-    display_name: status.display_name,
-    email: status.email,
-    captured_by: status.captured_by,
-  };
-  const resumeName = parseResumeNameFromGptText(gptText);
-  const resumeText = await getLocalResumeText();
-  const opts = { userName: resumeName, companyName: company, jobTitle: role, resumeText };
-
-  const relativePath = buildResumeRelativePath(me, opts);
+  const relativePath = buildResumePathFromTemplate(outputTemplate, me, opts);
   await downloadBlobToPath(blob, relativePath);
-  return buildResumeDownloadPath(me, opts);
+  return outputTemplate ? `Downloads/${relativePath}` : buildResumeDownloadPath(me, opts);
 }
 
 async function downloadManualDocxFromGptText(text, tabId) {
   const settings = await loadExtensionSettings();
-  if (!settings.captureToken) throw new Error("Add capture token in Settings.");
-
-  const status = await getExtensionStatus();
-  if (!status.connected) throw new Error(status.error || "Extension not connected.");
-  const teamId = status.team_id;
-  if (!teamId) throw new Error("Extension token has no team.");
-
   const chatTabId = tabId || (await findChatGptTabId());
   if (chatTabId) {
-    await showTabToast({ id: chatTabId }, "GPT done — building DOCX on server…", "success");
+    await showTabToast({ id: chatTabId }, "GPT done — building DOCX…", "success");
   }
   notify("Manual JD", "Building DOCX…");
 
   const modeData = await chrome.storage.local.get({ manualJdLabel: "Manual JD" });
-  const { blob, filename } = await postRenderDocx(
-    settings.apiBaseUrl,
-    settings.captureToken,
-    teamId,
-    text,
-    { jd_label: modeData.manualJdLabel },
-  );
+  const { blob, filename } = await requestRenderDocx(text, {
+    jd_label: modeData.manualJdLabel,
+  });
 
   const downloadPath = await downloadFilenameWithUserFolder(filename);
   await downloadBlobToPath(blob, downloadPath);
@@ -843,10 +1166,10 @@ async function submitGptResultText(text, opts = {}) {
       gpt_text: text,
       resume_path,
     });
-    if (resumeError) {
-      notify("Resume not saved", resumeError);
-    } else {
+    if (!resumeError && !opts.skipNotify) {
       notify("Resume ready", `Saved to ${resume_path}`);
+    } else if (resumeError && !opts.skipNotify) {
+      notify("Resume not saved", resumeError);
     }
     chrome.runtime
       .sendMessage({
@@ -854,6 +1177,7 @@ async function submitGptResultText(text, opts = {}) {
         resumeSaved: !resumeError,
         resumePath: resume_path,
         resumeError,
+        skipToast: opts.skipPanelToast === true,
       })
       .catch(() => {});
     return { preview: true, resume_path, resumeError };
@@ -907,26 +1231,55 @@ async function submitGptResultText(text, opts = {}) {
   return result;
 }
 
+async function persistPreviewResumePath(resume_path) {
+  const trimmed = String(resume_path || "").trim();
+  if (!trimmed) return;
+  const existing = (await getPreviewDraft()) || {};
+  await savePreviewDraft({ ...existing, resume_path: trimmed });
+  chrome.runtime
+    .sendMessage({
+      type: "PREVIEW_DRAFT_UPDATED",
+      resumeSaved: true,
+      resumePath: trimmed,
+      skipToast: true,
+    })
+    .catch(() => {});
+}
+
 async function downloadLastExport() {
   const settings = await loadExtensionSettings();
-  if (!settings.captureToken) throw new Error("Add capture token in Settings.");
-
   const opt = await loadActiveOptimization();
   const exportId = opt?.lastExportId;
   const teamId = opt?.teamId;
-  if (!exportId || !teamId) {
-    throw new Error("No export ready yet. Run ChatGPT Prompt or send a GPT result first.");
+
+  let resume_path = "";
+
+  if (settings.captureToken && exportId && teamId) {
+    const url = `${settings.apiBaseUrl}/api/team/${teamId}/resume-exports/${exportId}/download`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${settings.captureToken}` },
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(parseApiErrorBody(text, res.status));
+    }
+    const out = await downloadExportResponse(res, opt);
+    resume_path = formatDownloadsDisplayPath(out.filename);
+  } else {
+    const preview = (await getPreviewDraft()) || {};
+    const gptText = String(preview.gpt_text || "").trim();
+    if (!gptText) {
+      throw new Error("No export ready yet. Run GPT Prompt / GPT Result first.");
+    }
+    resume_path = await renderAndSaveResumeFromGptText(gptText, preview);
   }
 
-  const url = `${settings.apiBaseUrl}/api/team/${teamId}/resume-exports/${exportId}/download`;
-  const res = await fetch(url, {
-    method: "GET",
-    headers: { Authorization: `Bearer ${settings.captureToken}` },
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(parseApiErrorBody(text, res.status));
-  }
+  await persistPreviewResumePath(resume_path);
+  return { downloadPath: resume_path, resume_path };
+}
+
+async function downloadExportResponse(res, opt) {
 
   const blob = await res.blob();
   const leaf =
@@ -973,14 +1326,6 @@ chrome.commands.onCommand.addListener(async (command) => {
     }
     return;
   }
-  if (command === "download-resume-export") {
-    try {
-      await downloadLastExport();
-      notify("Download", "Resume DOCX download started.");
-    } catch (err) {
-      notify("Download failed", err?.message || String(err));
-    }
-  }
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -1016,7 +1361,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (type === "GET_EXTENSION_STATUS") {
-    getExtensionStatus({ forceRefresh: message.forceRefresh === true }).then(sendResponse);
+    getExtensionStatus({
+      forceRefresh: message.forceRefresh === true,
+      cacheOnly: message.cacheOnly === true,
+    }).then(sendResponse);
     return true;
   }
 
@@ -1035,17 +1383,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (type === "EXTRACT_DOC") {
     (async () => {
       try {
-        const settings = await loadExtensionSettings();
-        if (!settings.captureToken) {
-          sendResponse({ ok: false, error: "Add a capture token in Settings." });
+        const fileBase64 = String(message.fileBase64 || "");
+        const fileName = String(message.fileName || "");
+        if (!fileBase64 || !fileName) {
+          sendResponse({ ok: false, error: "Missing file data." });
           return;
         }
-        const out = await postExtractDoc(settings.apiBaseUrl, settings.captureToken, {
-          fileBase64: String(message.fileBase64 || ""),
-          fileName: String(message.fileName || ""),
-          mimeType: String(message.mimeType || ""),
+        const bytes = base64ToUint8Array(fileBase64);
+        const file = new File([bytes], fileName, {
+          type: message.mimeType || "application/octet-stream",
         });
-        sendResponse({ ok: true, text: String(out?.text || "") });
+        const text = String(await extractTextFromUploadFile(file)).trim();
+        sendResponse({ ok: true, text });
       } catch (err) {
         sendResponse({ ok: false, error: err?.message || String(err) });
       }
@@ -1142,17 +1491,54 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
-  if (type === "EXTRACT_TO_PREVIEW") {
-    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-      const tab = tabs[0];
+  if (type === "EXTRACT_TO_PREVIEW" || type === "EXTRACT_JD_WITH_AI") {
+    (async () => {
+      let tabId = message.tabId || null;
+      let sourceUrl = String(message.sourceUrl || "");
+      let pageTitle = String(message.pageTitle || "");
+      if (!message.fromPanel) {
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        const tab = tabs[0];
+        tabId = tab?.id || tabId;
+        sourceUrl = sourceUrl || String(tab?.url || "");
+        pageTitle = pageTitle || String(tab?.title || "");
+      }
+      const mergeMode =
+        message.mergeMode ||
+        (type === "EXTRACT_JD_WITH_AI" ? "jd_only" : "replace");
       const out = await extractAndFillPreview({
-        tabId: tab?.id,
+        tabId,
         capturedText: String(message.text || ""),
-        sourceUrl: String(message.sourceUrl || tab?.url || ""),
-        pageTitle: String(message.pageTitle || tab?.title || ""),
+        sourceUrl,
+        pageTitle,
         captureMethod: String(message.captureMethod || "selection"),
+        mergeMode,
       });
       sendResponse(out);
+    })();
+    return true;
+  }
+
+  if (type === "FILL_PREVIEW_FROM_SELECTION") {
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+      const tab = tabs[0];
+      const field = message.field === "manual_name" ? "manual_name" : message.field === "jd" ? "jd" : null;
+      if (!field) {
+        sendResponse({ ok: false, error: "Invalid field." });
+        return;
+      }
+      try {
+        const out = await fillPreviewFromSelection({
+          field,
+          text: String(message.text || ""),
+          sourceUrl: String(message.sourceUrl || tab?.url || ""),
+          pageTitle: String(message.pageTitle || tab?.title || ""),
+          tabId: tab?.id,
+        });
+        sendResponse(out);
+      } catch (err) {
+        sendResponse({ ok: false, error: err?.message || String(err) });
+      }
     });
     return true;
   }
@@ -1226,11 +1612,44 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (type === "DOWNLOAD_LATEST_GPT_RESULT") {
+    (async () => {
+      try {
+        const tab = await getActiveTab();
+        if (!tabIsChatGpt(tab)) {
+          throw new Error("Open ChatGPT in the active tab first.");
+        }
+        const gptRes = await sendToChatGptTab(tab.id, { type: "GET_LATEST_GPT_TEXT" });
+        if (gptRes?.status !== "ok") {
+          throw new Error(gptRes?.detail || "No valid GPT JSON in the latest message.");
+        }
+        const result = await submitGptResultText(String(gptRes.text || ""), {
+          previewOnly: true,
+          tabId: tab.id,
+          skipPanelToast: true,
+          skipNotify: true,
+        });
+        sendResponse({
+          status: "ok",
+          resume_path: result?.resume_path || "",
+          resumeError: result?.resumeError || "",
+        });
+      } catch (err) {
+        sendResponse({ status: "error", detail: err?.message || String(err) });
+      }
+    })();
+    return true;
+  }
+
   if (type === "PASTE_LOCAL_PROMPT") {
     (async () => {
       try {
         let tab = await getActiveTab();
-        if (!tabIsChatGpt(tab)) {
+        if (message.requireActiveChatGpt) {
+          if (!tabIsChatGpt(tab)) {
+            throw new Error("Open ChatGPT in the active tab first.");
+          }
+        } else if (!tabIsChatGpt(tab)) {
           const chatId = await findChatGptTabId();
           if (!chatId) throw new Error("Open ChatGPT in a tab first.");
           tab = { id: chatId };
@@ -1297,6 +1716,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (type === "SYNC_API_ENV_FROM_PAGE") {
+    syncApiEnvFromPageUrl(message.pageUrl)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((err) => sendResponse({ ok: false, error: err?.message || String(err) }));
+    return true;
+  }
+
   if (type === "GET_PAGE_CONTEXT" || type === "GET_SELECTED_TEXT") {
     chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
       const tab = tabs[0];
@@ -1333,14 +1759,27 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
-  if (type === "VALIDATE_USERNAME") {
+  if (type === "FETCH_REGISTERED_USERNAMES") {
     (async () => {
       try {
         const settings = await loadExtensionSettings();
         if (!settings.captureToken) {
-          sendResponse({ ok: false, error: "Add a capture token first." });
+          sendResponse({ ok: false, error: "Add a capture token first.", usernames: [] });
           return;
         }
+        const usernames = await fetchAllRegisteredUsernames(settings.apiBaseUrl, settings.captureToken);
+        await chrome.storage.local.set({ [LAST_REGISTERED_USERNAMES_KEY]: usernames });
+        sendResponse({ ok: true, usernames });
+      } catch (err) {
+        sendResponse({ ok: false, error: err?.message || String(err), usernames: [] });
+      }
+    })();
+    return true;
+  }
+
+  if (type === "SET_ACTIVE_USERNAME") {
+    (async () => {
+      try {
         const username = String(message.username || "").trim().toLowerCase();
         if (!/^[a-z0-9_-]{3,32}$/.test(username)) {
           sendResponse({
@@ -1349,13 +1788,19 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           });
           return;
         }
-        await validateExtensionUsername(settings.apiBaseUrl, settings.captureToken, username);
-        await saveExtensionSettings({ username, usernameValidatedAt: new Date().toISOString() });
-        await setUsernameValidationCache({ ...settings, username });
-        await clearExtensionStatusCache();
-        sendResponse({ ok: true, username });
+        const validatedAt = new Date().toISOString();
+        const { status: priorStatus } = await getCachedExtensionStatus();
+        await saveExtensionSettings({ username, usernameValidatedAt: validatedAt });
+        const nextStatus = {
+          ...(priorStatus || (await buildStatusFromSettingsOnly(await loadExtensionSettings()))),
+          username,
+          username_validated: true,
+          username_validated_at: validatedAt,
+        };
+        await setCachedExtensionStatus(nextStatus);
+        sendResponse({ ok: true, username, validatedAt });
       } catch (err) {
-        sendResponse({ ok: false, error: err?.message || "Username validation failed." });
+        sendResponse({ ok: false, error: err?.message || String(err) });
       }
     })();
     return true;
@@ -1437,8 +1882,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (type === "DOWNLOAD_EXPORT") {
     (async () => {
       try {
-        await downloadLastExport();
-        sendResponse({ status: "ok" });
+        const out = await downloadLastExport();
+        sendResponse({
+          status: "ok",
+          downloadPath: out?.downloadPath || out?.resume_path || out?.filename || "",
+        });
       } catch (err) {
         sendResponse({ status: "error", detail: err?.message || String(err) });
       }
@@ -1470,8 +1918,41 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             sendResponse({ ok: false, error: "Paste a capture token first." });
             return;
           }
-          await saveExtensionSettings({ captureToken: token });
-          sendResponse({ ok: true });
+          const items = await upsertSavedCaptureToken(token);
+          sendResponse({ ok: true, token, items, active: token });
+          return;
+        }
+        if (action === "LIST_TOKENS") {
+          const items = await listSavedCaptureTokens();
+          const active = (await loadExtensionSettings()).captureToken || "";
+          sendResponse({ ok: true, items, active, token: active });
+          return;
+        }
+        if (action === "SET_ACTIVE_TOKEN") {
+          const token = String(message.token || "").trim();
+          if (!token) {
+            sendResponse({ ok: false, error: "Select a token first." });
+            return;
+          }
+          const active = await setActiveCaptureToken(token);
+          sendResponse({ ok: true, active, items: await listSavedCaptureTokens() });
+          return;
+        }
+        if (action === "GET_TOKEN") {
+          const items = await listSavedCaptureTokens();
+          const active = settings.captureToken || "";
+          sendResponse({ ok: true, token: active, items, active });
+          return;
+        }
+        if (action === "DELETE_TOKEN") {
+          const token = String(message.token || settings.captureToken || "").trim();
+          if (!token) {
+            sendResponse({ ok: false, error: "No token to remove." });
+            return;
+          }
+          const items = await removeSavedCaptureToken(token);
+          const active = (await loadExtensionSettings()).captureToken || "";
+          sendResponse({ ok: true, items, active });
           return;
         }
         if (action === "SAVE_ENV") {

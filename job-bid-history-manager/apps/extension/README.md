@@ -40,16 +40,16 @@ Check `apps/web/public/downloads/extension-meta.json` → `groqKeysIncluded: tru
 | Action | Route |
 |--------|-------|
 | Test connection | `GET /api/extension/me` |
-| Validate username | `POST /api/extension/validate-username` |
+| List usernames | `GET /api/extension/usernames` |
 | Save accepted bid | `POST /api/capture/job` |
 | DOCX build (stateless) | Team render-docx API |
-| .docx/.pdf text parse (stateless) | `POST /api/extension/extract-doc` |
+| .docx/.pdf text parse | Local in extension (`file-text-extract.js`) |
 
 ## UX
 
 1. **Toolbar icon** → toggles the right-side workspace on the active tab
 2. **Context menu** → open workspace or capture shortcuts
-3. **Options page** (right-click extension → Options): token, username, environment
+3. **Options page** (right-click extension → Options): token and environment. Usernames are picked in the workspace Settings tab.
 
 ## Workspace tabs
 

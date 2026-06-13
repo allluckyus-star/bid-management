@@ -11,11 +11,14 @@
     "dev:web": "npm run build:shared && npm run dev -w @jbhm/web",
     "build:web": "npm run build:shared && npm run pack:extension && npm run build -w @jbhm/web",
     "build:shared": "npm run build -w @jbhm/shared",
-    "pack:extension": "node scripts/pack-extension.mjs",
+    "build:extension-docx": "node scripts/build-extension-docx.mjs",
+    "pack:extension": "node scripts/build-extension-docx.mjs && node scripts/pack-extension.mjs",
     "generate:icons": "node scripts/generate-icons.mjs"
   },
   "devDependencies": {
     "archiver": "^7.0.1",
+    "buffer": "^6.0.3",
+    "esbuild": "^0.25.12",
     "sharp": "^0.33.5"
   },
   "overrides": {

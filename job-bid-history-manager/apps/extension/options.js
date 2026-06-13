@@ -1,8 +1,6 @@
 const captureTokenEl = document.getElementById("captureToken");
-const usernameEl = document.getElementById("username");
 const saveTokenBtn = document.getElementById("saveToken");
 const testConnectionBtn = document.getElementById("testConnection");
-const validateUsernameBtn = document.getElementById("validateUsername");
 const saveEnvBtn = document.getElementById("saveEnv");
 const statusEl = document.getElementById("status");
 
@@ -19,12 +17,9 @@ function selectedEnv() {
 async function loadForm() {
   const stored = await chrome.storage.local.get({
     captureToken: "",
-    username: "",
-    usernameValidatedAt: null,
     apiEnv: JBHM_CONFIG.DEFAULT_ENV,
   });
   captureTokenEl.value = stored.captureToken || "";
-  usernameEl.value = String(stored.username || "");
   const env = stored.apiEnv === "local" ? "local" : "production";
   const radio = document.querySelector(`input[name="apiEnv"][value="${env}"]`);
   if (radio) radio.checked = true;
@@ -35,7 +30,7 @@ saveTokenBtn.addEventListener("click", async () => {
     captureToken: captureTokenEl.value,
     usernameValidatedAt: null,
   });
-  setStatus("Token saved. Revalidate username.", "ok");
+  setStatus("Token saved. Open the workspace Settings tab to refresh usernames.", "ok");
 });
 
 saveEnvBtn.addEventListener("click", async () => {
@@ -64,37 +59,6 @@ testConnectionBtn.addEventListener("click", async () => {
     const who = response.me?.captured_by || response.me?.email || "OK";
     setStatus(`Connected as ${who}`, "ok");
   });
-});
-
-validateUsernameBtn.addEventListener("click", async () => {
-  const username = usernameEl.value.trim().toLowerCase();
-  if (!/^[a-z0-9_-]{3,32}$/.test(username)) {
-    setStatus(
-      "Invalid username format. Use 3-32 lowercase letters, numbers, underscore, or hyphen.",
-      "err",
-    );
-    return;
-  }
-
-  validateUsernameBtn.disabled = true;
-  setStatus("Validating username…", "");
-  try {
-    const settings = await loadExtensionSettings();
-    if (!settings.captureToken) {
-      setStatus("Save capture token first.", "err");
-      return;
-    }
-    await validateExtensionUsername(settings.apiBaseUrl, settings.captureToken, username);
-    await saveExtensionSettings({
-      username,
-      usernameValidatedAt: new Date().toISOString(),
-    });
-    setStatus(`Username "${username}" validated.`, "ok");
-  } catch (e) {
-    setStatus(e instanceof Error ? e.message : "Username validation failed.", "err");
-  } finally {
-    validateUsernameBtn.disabled = false;
-  }
 });
 
 loadForm();

@@ -130,3 +130,181 @@ function resolveDownloadFilename(me, filename) {
       .pop() || "resume.docx";
   return withDownloadRoot(`${folder}/${leaf}`);
 }
+
+const OUTPUT_PATH_INVALID_CHARS = /[<>:"|?*\x00-\x1f]/;
+const DEFAULT_OUTPUT_PATH_TEMPLATE = "";
+
+function stripDownloadsPrefix(path) {
+  return String(path || "")
+    .replace(/\\/g, "/")
+    .replace(/^Downloads\/?/i, "")
+    .replace(/^\/+/, "")
+    .trim();
+}
+
+function formatLocalTimeHms(date = new Date()) {
+  const h = String(date.getHours()).padStart(2, "0");
+  const m = String(date.getMinutes()).padStart(2, "0");
+  const s = String(date.getSeconds()).padStart(2, "0");
+  return `${h}-${m}-${s}`;
+}
+
+/**
+ * @param {string} template
+ * @returns {{ ok: true, normalized: string } | { ok: false, error: string }}
+ */
+function validateOutputPathTemplate(template) {
+  const normalized = stripDownloadsPrefix(template);
+  if (!normalized) return { ok: true, normalized: "" };
+  if (!/\.docx$/i.test(normalized)) {
+    return { ok: false, error: "Path must end with .docx" };
+  }
+  if (OUTPUT_PATH_INVALID_CHARS.test(normalized)) {
+    return { ok: false, error: "Path contains invalid characters (<> : \" | ? *)." };
+  }
+  if (/\.\./.test(normalized)) {
+    return { ok: false, error: "Path cannot contain .." };
+  }
+  const segments = normalized.split("/").filter(Boolean);
+  if (!segments.length) {
+    return { ok: false, error: "Enter a file path." };
+  }
+  return { ok: true, normalized };
+}
+
+const OUTPUT_PATH_TOKEN_FIELDS = [
+  { token: "{role}", label: "job title" },
+  { token: "{company}", label: "company" },
+  { token: "{manual}", label: "manual name" },
+  { token: "{name}", label: "resume name" },
+  { token: "{username}", label: "username" },
+];
+
+function isOutputPathFieldPresent(value) {
+  const s = String(value ?? "").trim();
+  return Boolean(s && s !== "-");
+}
+
+/**
+ * @param {string} template
+ * @param {{ role?: string, company?: string, manual?: string, name?: string, username?: string }} ctx
+ * @returns {{ ok: true } | { ok: false, error: string }}
+ */
+function validateOutputPathTemplateContext(template, ctx = {}) {
+  const validation = validateOutputPathTemplate(template);
+  if (!validation.ok) return validation;
+  if (!validation.normalized) return { ok: true };
+
+  const missing = [];
+  for (const { token, label } of OUTPUT_PATH_TOKEN_FIELDS) {
+    if (!validation.normalized.includes(token)) continue;
+    const key = token.slice(1, -1);
+    if (!isOutputPathFieldPresent(ctx[key])) missing.push({ token, label });
+  }
+  if (missing.length === 1) {
+    const { token, label } = missing[0];
+    return {
+      ok: false,
+      error: `Output path uses ${token} but ${label} is empty in Preview.`,
+    };
+  }
+  if (missing.length > 1) {
+    return {
+      ok: false,
+      error: `Output path uses ${missing.map((m) => m.token).join(", ")} but ${missing.map((m) => m.label).join(", ")} are empty in Preview.`,
+    };
+  }
+  return { ok: true };
+}
+
+function buildOutputPathContext(me, opts = {}) {
+  return {
+    name: opts.userName || resolveResumeFileName(opts),
+    role: opts.jobTitle,
+    company: opts.companyName,
+    manual: opts.manualName,
+    username:
+      me?.username?.trim() ||
+      me?.captured_by?.trim() ||
+      me?.display_name?.trim() ||
+      (me?.email ? String(me.email).split("@")[0] : "") ||
+      "",
+  };
+}
+
+/**
+ * @param {string} template
+ * @param {{ date?: string, time?: string, name?: string, role?: string, manual?: string, company?: string, username?: string }} ctx
+ * @returns {string | null} Relative path under Downloads, or null to use legacy layout.
+ */
+function resolveOutputPathTemplate(template, ctx = {}) {
+  const validation = validateOutputPathTemplate(template);
+  if (!validation.ok) throw new Error(validation.error);
+  if (!validation.normalized) return null;
+
+  const date = ctx.date || formatLocalDateYmd();
+  const time = ctx.time || formatLocalTimeHms();
+  const name = sanitizeFilenameSegment(ctx.name) || "Resume";
+  const role = sanitizeFilenameSegment(ctx.role) || "role";
+  const manual = sanitizeFilenameSegment(ctx.manual) || "manual";
+  const company = sanitizeFilenameSegment(ctx.company) || "company";
+  const username = sanitizeDownloadFolderUser(ctx.username);
+
+  let resolved = validation.normalized
+    .split("{date}")
+    .join(date)
+    .split("{time}")
+    .join(time)
+    .split("{name}")
+    .join(name)
+    .split("{role}")
+    .join(role)
+    .split("{manual}")
+    .join(manual)
+    .split("{company}")
+    .join(company)
+    .split("{username}")
+    .join(username);
+
+  resolved = resolved.replace(/\\/g, "/").replace(/\/+/g, "/");
+  if (!/\.docx$/i.test(resolved)) resolved += ".docx";
+  return resolved;
+}
+
+/**
+ * @param {string} template
+ * @param {{ display_name?: string | null, email?: string | null, captured_by?: string | null, username?: string | null }} me
+ * @param {{ userName?: string, companyName?: string, jobTitle?: string, manualName?: string, resumeText?: string }} opts
+ */
+function buildResumePathFromTemplate(template, me, opts = {}) {
+  const ctx = buildOutputPathContext(me, opts);
+  const check = validateOutputPathTemplateContext(template, ctx);
+  if (!check.ok) throw new Error(check.error);
+
+  const relative = resolveOutputPathTemplate(template, ctx);
+  if (!relative) return buildResumeRelativePath(me, opts);
+  return relative;
+}
+
+/**
+ * Human-readable "Current path" for the settings UI (Downloads-rooted).
+ * Custom templates are used as-is under Downloads; empty template shows the default jbhm layout.
+ */
+function formatOutputPathForDisplay(template) {
+  const raw = String(template ?? "").trim();
+  if (!raw) {
+    return "Downloads/jbhm/{username}-{date}/{company}-{role}/{name}.docx";
+  }
+  const normalized = stripDownloadsPrefix(raw);
+  return `Downloads/${normalized}`;
+}
+
+/** Normalize a chrome.downloads filename into the Preview resume path display form. */
+function formatDownloadsDisplayPath(path) {
+  const normalized = String(path || "").replace(/\\/g, "/").trim();
+  if (!normalized) return "";
+  if (/^Downloads\/?/i.test(normalized)) {
+    return normalized.replace(/\/+/g, "/");
+  }
+  return `Downloads/${normalized.replace(/^\/+/, "")}`;
+}

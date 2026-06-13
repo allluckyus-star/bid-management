@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="156" viewBox="0 0 120 156" fill="none">
+  <rect width="120" height="156" rx="6" fill="#fff" stroke="#d4d4d8"/>
+  <rect x="42" y="14" width="64" height="7" rx="2" fill="#0f172a"/>
+  <rect x="50" y="25" width="48" height="4" rx="1" fill="#475569"/>
+  <rect x="42" y="34" width="56" height="3" rx="1" fill="#94a3b8"/>
+  <rect x="14" y="50" width="92" height="4" rx="1" fill="#e2e8f0"/>
+  <rect x="14" y="58" width="88" height="4" rx="1" fill="#e2e8f0"/>
+  <rect x="14" y="72" width="48" height="5" rx="1.5" fill="#1e293b"/>
+  <rect x="70" y="72" width="36" height="4" rx="1" fill="#64748b"/>
+  <rect x="14" y="84" width="78" height="3" rx="1" fill="#cbd5e1"/>
+  <circle cx="18" cy="85.5" r="2" fill="#334155"/>
+  <rect x="24" y="84" width="68" height="3" rx="1" fill="#cbd5e1"/>
+  <circle cx="18" cy="93.5" r="2" fill="#334155"/>
+  <text x="60" y="148" text-anchor="middle" font-family="Times New Roman, serif" font-size="9" fill="#64748b">Prof. Times</text>
+</svg>

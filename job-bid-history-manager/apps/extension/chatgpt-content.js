@@ -367,25 +367,10 @@ function handleKeydown(event) {
   }
 }
 
-function showButtonsFromSelection(mouseEvent) {
-  if (mouseEvent?.target && isOwnButton(mouseEvent.target)) {
-    return;
-  }
-  const selection = window.getSelection();
-  const text = getCombinedSelectedText();
-  if (isUsableSelection(text)) {
-    const anchor = getSelectionAnchorPageXY(selection, mouseEvent);
-    lastToolbarShownAt = Date.now();
-    suppressToolbarClearOnce = true;
-    showSelectionButtons(anchor.x, anchor.y, text);
-    return;
-  }
-  const recentlyCopied = Date.now() - lastCopyTriggerAt < 1500;
-  if (isChatGPTPage() && recentlyCopied && isUsableSelection(lastCopiedText)) {
-    const x = window.scrollX + Math.max(120, window.innerWidth - 120);
-    const y = window.scrollY + 90;
-    showSelectionButtons(x, y, lastCopiedText);
-  }
+function showButtonsFromSelection(_mouseEvent) {
+  // Selection toolbar removed on ChatGPT — use footer "GPT Result" in the workspace panel.
+  removeButtons();
+  lastToolbarSelectionText = "";
 }
 
 function isChatGPTPage() {

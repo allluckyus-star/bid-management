@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Job Bid History Capture",
-  "version": "0.8.45",
+  "version": "0.8.75",
   "description": "Capture job pages, optimize resumes via ChatGPT, and sync to your team dashboard.",
   "permissions": ["storage", "activeTab", "scripting", "contextMenus", "downloads"],
   "options_ui": {
@@ -32,12 +32,6 @@
         "default": "Alt+W"
       },
       "description": "Build prompt from server and send to ChatGPT (ChatGPT tab only)"
-    },
-    "download-resume-export": {
-      "suggested_key": {
-        "default": "Alt+A"
-      },
-      "description": "Download latest optimized resume DOCX"
     }
   },
   "content_scripts": [
@@ -97,12 +91,19 @@
         "panel-jd-tab.js",
         "panel-preview-tab.js",
         "local-storage.js",
+        "resume-library.js",
         "config.js",
         "storage.js",
         "api.js",
         "prompt-defaults.js",
-        "local-extraction.js",
-        "local-prompt.js"
+        "local-prompt.js",
+        "download-path.js",
+        "file-text-extract.js",
+        "vendor/jszip.min.js",
+        "vendor/pdf.min.mjs",
+        "vendor/pdf.worker.min.mjs",
+        "images/docx-styles/*.png",
+        "images/docx-styles/*.svg"
       ],
       "matches": ["<all_urls>"]
     }

@@ -245,7 +245,7 @@ export async function POST(request: Request) {
   }
 
   const message = clientReviewed
-    ? "Job captured with reviewed fields. AI extraction was not run."
+    ? "Saved to dashboard with your reviewed fields."
     : syncAi
       ? partial
         ? "Job saved with partial extraction (Groq failed)."

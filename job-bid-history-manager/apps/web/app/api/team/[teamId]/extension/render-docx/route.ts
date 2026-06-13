@@ -1,7 +1,7 @@
 import { resolveUserIdFromBearer } from "@/lib/auth/extension-token";
 import { getExtensionMeForUser } from "@/lib/auth/extension-identity";
 import { corsHeaders, optionsResponse } from "@/lib/http/cors";
-import { exportOptimizedResumeToDocxBuffer } from "@/lib/resumes/docx-export";
+import { exportOptimizedResumeToDocxBuffer, normalizeDocxStyleId } from "@/lib/resumes/docx-export";
 import { buildExportFilename } from "@/lib/resumes/filename";
 import { parseGptResultText } from "@/lib/resumes/gpt-result-parse";
 import {
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     const teamId = parseTeamIdFromRequest(request);
     const userId = await resolveUser(request, teamId);
 
-    const body = (await request.json()) as { text?: string; jd_label?: string };
+    const body = (await request.json()) as { text?: string; jd_label?: string; docx_style?: string };
     const text = String(body.text ?? "").trim();
     if (!text) {
       return new Response(JSON.stringify({ error: "text is required" }), {
@@ -53,7 +53,8 @@ export async function POST(request: Request) {
     }
 
     const parsed = parseGptResultText(text);
-    const docxBuffer = await exportOptimizedResumeToDocxBuffer(parsed.optimized_resume);
+    const docxStyle = normalizeDocxStyleId(body.docx_style);
+    const docxBuffer = await exportOptimizedResumeToDocxBuffer(parsed.optimized_resume, docxStyle);
     if (docxBuffer.length < 4 || docxBuffer[0] !== 0x50 || docxBuffer[1] !== 0x4b) {
       return new Response(JSON.stringify({ error: "DOCX generation produced an invalid file." }), {
         status: 500,

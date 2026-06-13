@@ -14,8 +14,8 @@ Next.js App Router + Supabase (shared team board) + Groq extraction in API route
 |------|---------|
 | `/dashboard` | Jobs table, filters, timeline chart |
 | `/dashboard/extension` | Chrome capture tokens |
-| `/api/profile/username` | Register/get account username for capture identity |
-| `/api/extension/validate-username` | Validate username against capture token owner |
+| `/api/profile/usernames` | Register/list account usernames for capture identity |
+| `/api/extension/usernames` | List usernames for extension (Bearer token) |
 | `/api/capture/job` | Extension capture (Bearer token) |
 
 ## Extension identity setup
@@ -23,7 +23,7 @@ Next.js App Router + Supabase (shared team board) + Groq extraction in API route
 1. Sign in with your account.
 2. Register your username in dashboard settings.
 3. Create capture token on Extension page.
-4. In extension settings: paste token, enter same username, validate username.
+4. In extension workspace Settings: paste token, Refresh, pick a username from the list.
 5. Capture jobs.
 
 Capture rejects requests when:

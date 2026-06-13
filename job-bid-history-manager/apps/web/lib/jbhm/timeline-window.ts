@@ -69,9 +69,6 @@ export function maxFutureEndMs(
   return nowMs + FUTURE_PAD_MS[bucket];
 }
 
-/** @deprecated use maxFutureEndMs */
-export const minFutureEndMs = maxFutureEndMs;
-
 export type HistoryBounds = { minMs: number | null; maxMs: number | null };
 
 export type TimeRange = { start: string; end: string };

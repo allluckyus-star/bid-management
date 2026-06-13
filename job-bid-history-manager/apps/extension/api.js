@@ -42,18 +42,13 @@ async function fetchExtensionMe(baseUrl, token) {
 /**
  * @param {string} baseUrl
  * @param {string} token
- * @param {string} username
  */
-async function validateExtensionUsername(baseUrl, token, username) {
-  const route = "extension/validate-username";
+async function fetchExtensionUsernames(baseUrl, token) {
+  const route = "extension/usernames";
   const startedAt = Date.now();
-  const res = await fetch(`${baseUrl}/api/extension/validate-username`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ username }),
+  const res = await fetch(`${baseUrl}/api/extension/usernames`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
   });
   const text = await res.text();
   debugNetwork(route, startedAt, { success: res.ok, status: res.status });
@@ -192,36 +187,7 @@ async function postChatGptPrompt(baseUrl, token, teamId, opts = {}) {
   return text ? JSON.parse(text) : {};
 }
 
-/**
- * Manual JD mode: render DOCX in memory only (no optimization/export DB rows).
- * @param {string} baseUrl
- * @param {string} token
- * @param {string} teamId
- * @param {string} gptText
- * @param {{ jd_label?: string }} opts
- */
-async function postRenderDocx(baseUrl, token, teamId, gptText, opts = {}) {
-  const route = "extension/render-docx";
-  const startedAt = Date.now();
-  const res = await fetch(`${baseUrl}/api/team/${teamId}/extension/render-docx`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      text: gptText,
-      jd_label: opts.jd_label || undefined,
-    }),
-  });
-
-  debugNetwork(route, startedAt, { success: res.ok, status: res.status });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(parseApiErrorBody(text, res.status));
-  }
-
-  const buffer = await res.arrayBuffer();
+function parseDocxRenderResponse(res, buffer) {
   const u8 = new Uint8Array(buffer);
   const isZip =
     u8.length >= 4 &&
@@ -237,7 +203,6 @@ async function postRenderDocx(baseUrl, token, teamId, gptText, opts = {}) {
         : "Server did not return a valid DOCX file.",
     );
   }
-
   const blob = new Blob([buffer], {
     type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   });
@@ -246,6 +211,86 @@ async function postRenderDocx(baseUrl, token, teamId, gptText, opts = {}) {
     parseFilenameFromContentDisposition(res.headers.get("Content-Disposition")) ||
     "resume.docx";
   return { blob, filename };
+}
+
+function docxApiUnreachableMessage(baseUrl, err) {
+  const root = String(baseUrl || "").replace(/\/$/, "");
+  const isLocal = /localhost|127\.0\.0\.1/.test(root);
+  const detail = err?.message ? ` (${err.message})` : "";
+  if (isLocal) {
+    return `Cannot reach ${root} to build DOCX${detail}. Start the web app (apps/web) or switch to Production in Settings → Server.`;
+  }
+  return `Cannot reach ${root} to build DOCX${detail}. Deploy the latest web app or check your network.`;
+}
+
+/**
+ * Stateless DOCX render — no capture token (local download only).
+ * @param {string} baseUrl
+ * @param {string} gptText
+ * @param {{ jd_label?: string; docx_style?: string }} opts
+ */
+async function postRenderDocxStateless(baseUrl, gptText, opts = {}) {
+  const route = "extension/render-docx";
+  const startedAt = Date.now();
+  const url = `${baseUrl}/api/extension/render-docx`;
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: gptText,
+        jd_label: opts.jd_label || undefined,
+        docx_style: opts.docx_style || undefined,
+      }),
+    });
+  } catch (err) {
+    debugNetwork(route, startedAt, { success: false });
+    throw new Error(docxApiUnreachableMessage(baseUrl, err));
+  }
+  debugNetwork(route, startedAt, { success: res.ok, status: res.status });
+  if (res.status === 404) {
+    throw new Error(
+      "DOCX API not found on server. Deploy the latest web app (route /api/extension/render-docx).",
+    );
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(parseApiErrorBody(text, res.status));
+  }
+  return parseDocxRenderResponse(res, await res.arrayBuffer());
+}
+
+/**
+ * Team DOCX render when a capture token is configured.
+ * @param {string} baseUrl
+ * @param {string} token
+ * @param {string} teamId
+ * @param {string} gptText
+ * @param {{ jd_label?: string; docx_style?: string }} opts
+ */
+async function postRenderDocx(baseUrl, token, teamId, gptText, opts = {}) {
+  const route = "team/extension/render-docx";
+  const startedAt = Date.now();
+  const res = await fetch(`${baseUrl}/api/team/${teamId}/extension/render-docx`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      text: gptText,
+      jd_label: opts.jd_label || undefined,
+      docx_style: opts.docx_style || undefined,
+    }),
+  });
+
+  debugNetwork(route, startedAt, { success: res.ok, status: res.status });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(parseApiErrorBody(text, res.status));
+  }
+  return parseDocxRenderResponse(res, await res.arrayBuffer());
 }
 
 function parseFilenameFromContentDisposition(header) {

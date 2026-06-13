@@ -15,8 +15,9 @@ function buildLocalChatGptPrompt(opts = {}) {
   const template = normalizePromptText(opts.template || DEFAULT_PROMPT_TEMPLATE);
   const jdText = normalizePromptText(opts.jdText || "") || "(no job description provided)";
   const resumeText = normalizePromptText(opts.resumeText || "") || "(no resume provided)";
+  const lockedSuffix = getLockedPromptSuffix(opts.includeProject !== false);
 
-  const combined = [template, "", LOCKED_PROMPT_SUFFIX_PREVIEW].join("\n");
+  const combined = [template, "", lockedSuffix].join("\n");
 
   return combined
     .split("{jd_text}")

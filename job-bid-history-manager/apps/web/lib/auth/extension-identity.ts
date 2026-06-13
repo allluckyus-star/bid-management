@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 
+import { listAllProfileUsernames } from "@/lib/auth/profile-usernames";
+
 /** Label stored on jobs.captured_by — never trust extension payload. */
 export async function resolveCapturedByForUser(
   admin: SupabaseClient,
@@ -34,6 +36,7 @@ export type ExtensionMePayload = {
   display_name: string | null;
   email: string | null;
   username: string | null;
+  usernames: string[];
   captured_by: string;
 };
 
@@ -45,9 +48,10 @@ export async function getExtensionMeForUser(userId: string): Promise<ExtensionMe
     .eq("id", userId)
     .maybeSingle();
 
+  const usernames = await listAllProfileUsernames(admin, userId);
   const display_name = profile?.display_name?.trim() || null;
   const email = profile?.email?.trim() || null;
-  const username = profile?.username?.trim() || null;
+  const username = profile?.username?.trim() || usernames[0] || null;
   const captured_by = await resolveCapturedByForUser(admin, userId);
 
   let resolvedEmail = email;
@@ -62,6 +66,7 @@ export async function getExtensionMeForUser(userId: string): Promise<ExtensionMe
     display_name,
     email: resolvedEmail,
     username,
+    usernames,
     captured_by,
   };
 }

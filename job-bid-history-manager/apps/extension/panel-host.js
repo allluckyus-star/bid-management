@@ -9,12 +9,12 @@ const PANEL_EXPANDED_WIDTH_KEY = "jbhmWorkspaceExpandedWidth";
 /** Floating circle toggle (not a full-height bar) */
 const HANDLE_SIZE = 28;
 const HANDLE_COLLAPSED_SHELL = 10;
-const DEFAULT_WIDTH = 320;
+const DEFAULT_WIDTH = 500;
 const MIN_WIDTH = 280;
-const MAX_WIDTH = 420;
+const MAX_WIDTH = 560;
 const COLLAPSED_WIDTH = HANDLE_COLLAPSED_SHELL;
 const LAYOUT_VERSION_KEY = "jbhmWorkspaceLayoutVersion";
-const LAYOUT_VERSION = 4;
+const LAYOUT_VERSION = 5;
 const TRANSITION =
   "width 0.32s cubic-bezier(0.4, 0, 0.2, 1), margin-right 0.32s cubic-bezier(0.4, 0, 0.2, 1)";
 const PUSH_CLASS = "jbhm-workspace-push";

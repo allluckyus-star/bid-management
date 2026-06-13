@@ -1,130 +1,166 @@
 #jbhm-jd-selection-toolbar {
   position: fixed;
-  z-index: 2147483645;
-  display: none;
+  z-index: 2147483647;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  --jbhm-r: 52px;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 #jbhm-jd-selection-toolbar.jbhm-visible {
-  display: block;
-  animation: jbhm-pop 0.16s ease-out;
+  pointer-events: auto;
 }
 
-@keyframes jbhm-pop {
+/* Orbit path — only the arm rotates around the cursor. */
+#jbhm-jd-selection-toolbar .jbhm-orbit-arm {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform: rotate(var(--jbhm-start, 0deg)) translateX(0);
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+#jbhm-jd-selection-toolbar.jbhm-visible .jbhm-orbit-arm {
+  pointer-events: auto;
+}
+
+#jbhm-jd-selection-toolbar .jbhm-orbit-arm.jbhm-landed {
+  animation: jbhm-arm-orbit 0.85s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+#jbhm-jd-selection-toolbar .jbhm-orbit-arm.jbhm-landed .jbhm-fab {
+  animation: jbhm-fab-counter 0.85s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes jbhm-arm-orbit {
   from {
     opacity: 0;
-    transform: scale(0.6);
+    transform: rotate(var(--jbhm-start)) translateX(0);
   }
   to {
     opacity: 1;
-    transform: scale(1);
+    transform: rotate(var(--jbhm-end)) translateX(var(--jbhm-r));
   }
 }
 
-#jbhm-jd-selection-toolbar button {
+/* Counter-rotate + pop-in (same feel as ChatGPT jbhm-fab). Icon stays upright. */
+@keyframes jbhm-fab-counter {
+  from {
+    transform: rotate(calc(-1 * var(--jbhm-start))) translateY(8px) scale(0.72);
+  }
+  to {
+    transform: rotate(calc(-1 * var(--jbhm-end))) translateY(0) scale(1);
+  }
+}
+
+/* Live button shell — matches chatgpt-content .jbhm-fab[data-variant="gpt"] */
+#jbhm-jd-selection-toolbar .jbhm-fab {
   position: relative;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
   padding: 0;
-  margin: 0;
-  border: 0;
-  border-radius: 10px;
-  cursor: pointer;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
   color: #fff;
-  background: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%);
-  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.45);
+  cursor: pointer;
+  user-select: none;
   overflow: visible;
-  animation: jbhm-float 2.4s ease-in-out infinite;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+  transition: background 180ms ease, filter 180ms ease;
 }
 
-@keyframes jbhm-float {
-  0%,
-  100% {
-    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.45);
-    transform: translateY(0);
-  }
-  50% {
-    box-shadow: 0 10px 22px rgba(124, 58, 237, 0.6);
-    transform: translateY(-1.5px);
-  }
+#jbhm-jd-selection-toolbar .jbhm-fab[data-variant="extract"] {
+  background: linear-gradient(135deg, #a855f7 0%, #6366f1 55%, #4f46e5 100%);
+  box-shadow: 0 10px 26px rgba(99, 102, 241, 0.45);
+  --jbhm-pulse: rgba(139, 92, 246, 0.55);
 }
 
-#jbhm-jd-selection-toolbar button .jbhm-ico {
-  width: 18px;
-  height: 18px;
-  display: block;
-  animation: jbhm-ico-pulse 1.8s ease-in-out infinite;
+#jbhm-jd-selection-toolbar .jbhm-fab[data-variant="extract"]:hover {
+  background: linear-gradient(135deg, #9333ea 0%, #4f46e5 55%, #4338ca 100%);
 }
 
-@keyframes jbhm-ico-pulse {
-  0%,
-  100% {
-    transform: scale(1) translateX(0);
-    opacity: 0.95;
-  }
-  50% {
-    transform: scale(1.12) translateX(1px);
-    opacity: 1;
-  }
+#jbhm-jd-selection-toolbar .jbhm-fab[data-variant="jd"] {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 55%, #1d4ed8 100%);
+  box-shadow: 0 10px 26px rgba(37, 99, 235, 0.45);
+  --jbhm-pulse: rgba(59, 130, 246, 0.55);
 }
 
-/* Glowing halo ring that radiates outward */
-#jbhm-jd-selection-toolbar button .jbhm-spark {
+#jbhm-jd-selection-toolbar .jbhm-fab[data-variant="jd"]:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 55%, #1e40af 100%);
+}
+
+#jbhm-jd-selection-toolbar .jbhm-fab[data-variant="name"] {
+  background: linear-gradient(135deg, #2dd4bf 0%, #14b8a6 55%, #0d9488 100%);
+  box-shadow: 0 10px 26px rgba(20, 184, 166, 0.45);
+  --jbhm-pulse: rgba(45, 212, 191, 0.55);
+}
+
+#jbhm-jd-selection-toolbar .jbhm-fab[data-variant="name"]:hover {
+  background: linear-gradient(135deg, #14b8a6 0%, #0d9488 55%, #0f766e 100%);
+}
+
+#jbhm-jd-selection-toolbar .jbhm-fab::after {
+  content: "";
   position: absolute;
   inset: 0;
-  border-radius: 10px;
+  border-radius: 12px;
   pointer-events: none;
-  box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.55);
-  animation: jbhm-ring 1.8s ease-out infinite;
+  opacity: 0;
 }
 
-@keyframes jbhm-ring {
+#jbhm-jd-selection-toolbar .jbhm-fab.jbhm-live::after {
+  opacity: 1;
+  animation: jbhm-fab-ring 1.8s ease-out infinite;
+}
+
+@keyframes jbhm-fab-ring {
   0% {
-    box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.5);
+    box-shadow: 0 0 0 0 var(--jbhm-pulse);
   }
   70% {
-    box-shadow: 0 0 0 9px rgba(124, 58, 237, 0);
+    box-shadow: 0 0 0 12px transparent;
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(124, 58, 237, 0);
+    box-shadow: 0 0 0 0 transparent;
   }
 }
 
-#jbhm-jd-selection-toolbar button:hover {
-  filter: brightness(1.08);
+#jbhm-jd-selection-toolbar .jbhm-fab.jbhm-live svg {
+  animation: jbhm-fab-spark 1.9s ease-in-out infinite;
+  transform-origin: center;
 }
 
-#jbhm-jd-selection-toolbar button:disabled {
-  opacity: 0.7;
+@keyframes jbhm-fab-spark {
+  0%,
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.16) rotate(8deg);
+  }
+}
+
+#jbhm-jd-selection-toolbar .jbhm-fab:active {
+  filter: brightness(0.95);
+  transform: rotate(calc(-1 * var(--jbhm-end))) scale(0.96);
+}
+
+#jbhm-jd-selection-toolbar .jbhm-fab:disabled {
+  opacity: 0.65;
   cursor: wait;
+  pointer-events: none;
+}
+
+#jbhm-jd-selection-toolbar .jbhm-fab:disabled::after,
+#jbhm-jd-selection-toolbar .jbhm-fab:disabled svg {
   animation: none;
-}
-
-#jbhm-jd-selection-toast {
-  position: fixed;
-  z-index: 2147483645;
-  display: none;
-  max-width: 280px;
-  padding: 8px 10px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
-  color: #14532d;
-  background: #ecfdf3;
-  border: 1px solid #86efac;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.15);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-}
-
-#jbhm-jd-selection-toast.jbhm-visible {
-  display: block;
-}
-
-#jbhm-jd-selection-toast.jbhm-err {
-  color: #991b1b;
-  background: #fef2f2;
-  border-color: #fecaca;
 }
